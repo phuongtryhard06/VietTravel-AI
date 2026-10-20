@@ -49,6 +49,10 @@ answer_model = travel_chatbot_ns.model('Answer', {
     'google_maps_url': fields.String(description='Direct Google Maps URL'),
     'distance_km': fields.Float(description='Distance from query center in km'),
     'similarity': fields.Float(description='Similarity score (0-1)'),
+    'image_url': fields.String(description='Image URL for visual preview'),
+    'thoi_gian_hoat_dong': fields.String(description='Opening hours'),
+    'gia_ve': fields.String(description='Admission fee or price range'),
+    'danh_gia': fields.Float(description='Rating out of 5.0'),
     'language': fields.String(description='Language of the result (vietnamese, english, chinese, korean, japanese)')
 })
 

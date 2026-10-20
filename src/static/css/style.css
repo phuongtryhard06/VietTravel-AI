@@ -3335,3 +3335,96 @@ body {
     scrollbar-color: rgba(255, 255, 255, 0.12) transparent !important;
 }
 
+/* Inline Chat Link styling */
+.chat-inline-link {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    background: rgba(37, 99, 235, 0.15) !important;
+    border: 1px solid rgba(59, 130, 246, 0.35) !important;
+    color: #60a5fa !important;
+    padding: 3px 12px !important;
+    border-radius: 9999px !important;
+    text-decoration: none !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    margin: 3px 4px !important;
+    transition: all 0.2s ease !important;
+}
+
+.chat-inline-link:hover {
+    background: rgba(37, 99, 235, 0.35) !important;
+    color: #ffffff !important;
+    border-color: #3b82f6 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
+}
+
+/* Card Visual Thumbnail Box */
+.mini-card-thumb {
+    width: 100%;
+    height: 140px;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 12px;
+    background: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mini-card-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mini-card:hover .mini-card-thumb img {
+    transform: scale(1.06);
+}
+
+.thumb-badge {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #f8fafc;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-rating {
+    background: rgba(245, 158, 11, 0.15) !important;
+    color: #fbbf24 !important;
+    border: 1px solid rgba(245, 158, 11, 0.3) !important;
+}
+
+/* Modal Banner Image */
+.modal-banner-img-box {
+    width: 100%;
+    height: 210px;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 18px;
+    background: #0f172a;
+    display: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-banner-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+

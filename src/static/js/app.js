@@ -358,12 +358,21 @@ function addBotResponse(data) {
 
             const mapUrl = loc.google_maps_url || (loc.latitude && loc.longitude ? `https://www.google.com/maps?q=${loc.latitude},${loc.longitude}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((loc.ten_dia_diem || '') + ' ' + (loc.khu_vuc || 'Việt Nam'))}`);
 
+            const thumbHtml = loc.image_url ? `
+                <div class="mini-card-thumb">
+                    <img src="${escapeHtml(loc.image_url)}" alt="${escapeHtml(loc.ten_dia_diem)}" loading="lazy">
+                    <span class="thumb-badge"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(loc.khu_vuc || 'Việt Nam')}</span>
+                </div>
+            ` : '';
+
             htmlContent += `
                 <div class="mini-card">
+                    ${thumbHtml}
                     <h4>${escapeHtml(loc.ten_dia_diem)}</h4>
                     <div class="mini-meta">
                         <span class="badge">${escapeHtml(loc.loai_dia_diem || 'Địa điểm')}</span>
                         <span class="badge badge-district">${escapeHtml(loc.khu_vuc || 'Việt Nam')}</span>
+                        ${loc.danh_gia ? `<span class="badge badge-rating"><i class="fa-solid fa-star"></i> ${loc.danh_gia}</span>` : ''}
                     </div>
                     <p>${escapeHtml(loc.mo_ta || loc.dia_chi || '')}</p>
                     <div class="mini-card-actions">
@@ -1229,6 +1238,18 @@ function setupModal() {
 function openModalWithItem(item) {
     if (!item) return;
     state.activeDetailItem = item;
+    
+    const modalImg = document.getElementById('modal-img');
+    const modalImgBox = document.getElementById('modal-banner-box');
+    if (modalImg) {
+        if (item.image_url) {
+            modalImg.src = item.image_url;
+            if (modalImgBox) modalImgBox.style.display = 'block';
+        } else {
+            if (modalImgBox) modalImgBox.style.display = 'none';
+        }
+    }
+
     elements.modalTitle.textContent = item.ten_dia_diem || 'Địa điểm';
     elements.modalCategory.textContent = item.loai_dia_diem || 'Địa điểm';
     elements.modalDistrict.textContent = item.khu_vuc || 'Việt Nam';
@@ -1319,6 +1340,11 @@ function formatMarkdown(text) {
 
     // 3. Escape HTML trước để đảm bảo an toàn XSS
     let html = escapeHtml(s);
+
+    // 3.5. Parse Markdown links [Title](URL) thành thẻ <a> có thể bấm mở trực tiếp
+    html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)\&]+(?:\&amp;[^\s\)]*)*)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chat-inline-link"><i class="fa-solid fa-arrow-up-right-from-square"></i> $1</a>');
+    html = html.replace(/\[\+?\s*Thêm vào lịch(?:\s*trình)?\]/gi, '');
+    html = html.replace(/\|\s*(?=\n|<br>|$)/gm, '');
 
     // 4. Đường phân cách ngang (---, ***, ___)
     html = html.replace(/^[ \t]*[-*_]{3,}[ \t]*$/gm, '<hr class="chat-divider">');
