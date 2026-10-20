@@ -1,0 +1,158 @@
+\chapter{Experimental Results and Discussion}
+\label{chap:results_discussion}
+
+\section{Evaluation Scope and Evidence Available}
+
+A quantitative evaluation should be grounded in a fixed dataset, labeled queries, a defined system configuration, and recorded execution output. The repository snapshot contains a data-processing summary, a small pilot fixture, implementation code, and a test module. The existing nine-case unittest suite was executed against the current local working tree; the recorded run is summarized below. The project still does not contain a labeled POI retrieval benchmark, a response-quality annotation set, output logs from an LLM evaluation, or a reproducible load-test report. This chapter therefore reports the completed regression run and other available evidence, while describing a protocol for collecting the missing model and system measurements.
+
+The distinction matters because three types of statement are often confused. First, a source-code rule (for example, rejecting a repeated \code{osm\_id}) is an implemented behavior. Second, an executed unit-test result provides evidence that selected assertions passed for the tested local working tree. Third, a model metric such as answer accuracy or route feasibility requires a defined test corpus and measured outputs. The run below supports limited regression claims; it does not document the third type of evidence.
+
+The proposed evaluation separates three tracks so that retrieval, schedule feasibility, and answer grounding are measured independently. Figure~\ref{fig:evaluation_protocol} summarizes the evidence needed; it does not represent completed experiments.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        evalbox/.style={draw=black, fill=black!4, rounded corners=2pt,
+            align=center, text width=3.7cm, minimum height=1.5cm,
+            inner sep=1.5mm, font=\footnotesize},
+        evalflow/.style={-{Stealth[length=2mm]}, thick, draw=black}
+    ]
+        \node[evalbox] (inputs) at (0,0) {Frozen data and test requests\\fixed revision and configuration};
+        \node[evalbox] (retrieval) at (5,1.9) {Retrieval track\\labeled POIs\\Hit@K, MRR, NDCG};
+        \node[evalbox] (planning) at (5,0) {Itinerary track\\fixed travel requests\\independent feasibility review};
+        \node[evalbox] (answers) at (5,-1.9) {Answer-grounding track\\claim-level evidence labels};
+        \node[evalbox] (report) at (10,0) {Measured outputs and logs\\metrics, configuration, limitations};
+        \draw[evalflow] (inputs.east) -- (retrieval.west);
+        \draw[evalflow] (inputs.east) -- (planning.west);
+        \draw[evalflow] (inputs.east) -- (answers.west);
+        \draw[evalflow] (retrieval.east) -- (report.north west);
+        \draw[evalflow] (planning.east) -- (report.west);
+        \draw[evalflow] (answers.east) -- (report.south west);
+    \end{tikzpicture}
+    \caption{Recommended evaluation evidence flow; labeled retrieval, itinerary-quality, answer-grounding, and runtime benchmark results remain unavailable}
+    \label{fig:evaluation_protocol}
+\end{figure}
+
+\section{Dataset Processing Results}
+
+The committed processing summary records 110,421 input records across the three imported layers. Of these, 30,941 rows pass layer-level candidate filtering and 30,839 unique identifiers are listed after deduplication. The summary provides category counts and layer-level rejection counts, reproduced in Chapter~\ref{chap:dataset}. Those values are useful as a descriptive data profile and show that the import pipeline performs substantial name/class/coordinate filtering.
+
+The manifest's counts are not fully self-consistent. Subtracting 30,839 unique IDs from 30,941 candidates gives 102 duplicate rows, whereas the explicit duplicate field reports 100. The grouped category counts do sum to 30,839. This inconsistency is a data-quality finding, not a corrected result. A fresh import audit should emit each duplicate OSM ID and the source layers in which it occurs, then reconcile the summary before presenting a final accepted-row count.
+
+The summary lists null values for unknown price, rating, and opening hours, and defines a coordinate-based fallback address. This is a positive design choice because the data pipeline does not substitute made-up values. The trade-off is that the catalogue's usefulness varies by field: a point can be geographically searchable while lacking the details needed to answer whether it is open, affordable, or appropriate for a visit. The repository does not publish field-level completeness percentages, so completeness rates cannot be calculated from the evidence reviewed.
+
+\section{Functional Test Design in the Repository}
+
+The file \code{tests/test\_multi\_agent\_flow.py} defines nine unittest methods. Its module docstring states that the tests use the pilot fixture and mocked database/provider calls and do not connect to or write to the configured PostgreSQL database. Table~\ref{tab:declared_tests} summarizes the assertions represented by those methods and their outcomes in the recorded local run.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Regression test cases and outcomes in the recorded local run}
+    \label{tab:declared_tests}
+    \renewcommand{\arraystretch}{1.15}
+    \begin{tabularx}{\textwidth}{c >{\raggedright\arraybackslash}p{4.4cm} >{\raggedright\arraybackslash}X c}
+        \toprule
+        \textbf{No.} & \textbf{Test scenario} & \textbf{Expected behavior encoded by the assertion} & \textbf{Run} \\
+        \midrule
+        1 & Offline planner with flat pilot coordinates & Successful validated draft, three stops, and non-null latitude and longitude values & PASS \\
+        2 & Plan-draft endpoint with mocked POI results & HTTP 200, valid draft, and \code{is\_saved=False} & PASS \\
+        3 & Invalid selected-date text & HTTP 400 & PASS \\
+        4 & Date in the past & HTTP 400 and invalid-request status & PASS \\
+        5 & Latitude without longitude & HTTP 400 & PASS \\
+        6 & Non-numeric coordinate input & HTTP 400 & PASS \\
+        7 & Simulated staging database error & HTTP 503 and database-error status & PASS \\
+        8 & Confirm endpoint without Bearer token & HTTP 401 & PASS \\
+        9 & Login with mocked auth service & HTTP 200 and the mocked token/user payload & PASS \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+These cases target input validation, the offline planning path, API status mapping, and selected authentication behavior. The test module does not exercise a live PostgreSQL connection, actual transaction rollback, email delivery, an external language-model provider, Google Search grounding, actual road routing, or concurrent load. It does not score response relevance or truthfulness. The passing run is useful regression evidence, but it is not evidence of production reliability or model quality.
+
+The run was performed on 21 October 2026 from the repository root using Python 3.10.11 from the project virtual environment. The command was \code{venv/Scripts/python.exe -m unittest discover -s tests -p test\_*.py -v}; the runner reported \code{Ran 9 tests in 0.048s; OK}. All nine cases in Table~\ref{tab:declared_tests} passed, with zero failures and zero errors. The checkout contained uncommitted changes, so this result applies to the local working tree at the time of execution rather than to a clean tagged release. Database and provider calls were mocked; the runtime is the duration of this small unit-test suite, not an application latency benchmark.
+
+\section{Implemented Behavior Observed by Source Inspection}
+
+Several properties can be established from the implementation without claiming benchmark results:
+\begin{itemize}[leftmargin=1.8em,itemsep=3pt]
+    \item The itinerary endpoint sets \code{execute\_api=False}; its normal draft path therefore uses the deterministic scheduling routine.
+    \item The orchestrator passes only database-retrieved or explicitly supplied candidate POIs to the planner, and the validator checks draft identifiers against that candidate set.
+    \item The route helper returns a Haversine-based distance estimate multiplied by 1.3 and leaves travel time unknown.
+    \item The validator separates errors that invalidate a draft from warnings about missing or complex opening-hour information and unknown travel time.
+    \item The draft endpoint returns an unsaved object. Confirmation is a separate operation guarded by a verified-user JWT lookup.
+    \item The radius search performs a bounding-box prefilter, exact Haversine radius check, distance ordering, and then limiting.
+\end{itemize}
+
+These properties explain the software's safety boundaries, but they do not quantify their real-world effectiveness. For example, checking that a drafted \code{osm\_id} belongs to the candidate set prevents a planner from adding an identifier outside that set. It does not verify that an OSM name is accurate, that a POI is still operating, or that the candidate set itself contains the best locations.
+
+\section{Proposed Retrieval Evaluation}
+
+A future retrieval study should begin with a manually labeled query set. Each query should have one or more relevant OSM IDs and a reason for relevance, with categories covering exact place names, categories, text-only area labels, coordinate-centered searches, Vietnamese diacritics, and multilingual wording. Each query should be run against a frozen database snapshot and a recorded limit and radius. The relevance label must be prepared independently of the search results to avoid scoring the system against its own output.
+
+For a query set $\mathcal{Q}$, the following ranking measures are suitable:
+\begin{align}
+    \operatorname{Hit@K}
+    &= \frac{1}{|\mathcal{Q}|}
+       \sum_{q\in\mathcal{Q}}
+       \mathbb{I}\left(R_q^{(K)}\cap G_q\ne\varnothing\right),\\
+    \operatorname{MRR}
+    &= \frac{1}{|\mathcal{Q}|}
+       \sum_{q\in\mathcal{Q}}\frac{1}{\operatorname{rank}_q},\\
+    \operatorname{NDCG@K}
+    &= \frac{\operatorname{DCG@K}}{\operatorname{IDCG@K}},
+\end{align}
+where $R_q^{(K)}$ is the retrieved top-$K$, $G_q$ is the set of relevant IDs, and $\operatorname{rank}_q$ is the first relevant position. Hit@K measures whether at least one known relevant item appears; MRR rewards earlier first relevant results; NDCG accommodates graded relevance when annotators distinguish exact, close, and weak matches. None of these scores is available in the current snapshot.
+
+At minimum, a retrieval evaluation should compare the current SQL text/category search against a geographic-only baseline and a clearly specified semantic-search baseline if the optional Chroma index is intended for deployment. All approaches must use the same frozen catalogue and query set. Results should be reported by query type and language, since an aggregate score can conceal poor performance on local names, administrative labels, or non-Vietnamese queries. A ranking score alone should not be interpreted as factual response accuracy.
+
+\section{Proposed Itinerary and Answer Evaluation}
+
+For itinerary drafts, a useful primary measure is the independently audited feasibility rate:
+\begin{equation}
+    \operatorname{FeasibilityRate}
+    = \frac{\text{drafts meeting all predefined hard constraints}}
+           {\text{drafts reviewed}}.
+\end{equation}
+The hard-constraint checklist should include candidate-set membership, duplicate stops, coordinate validity, valid time intervals, interval overlap, daily span, and any enforceable opening-hour rules. Because the validator implements only a subset of real travel constraints, a human audit or independent checker should also consider route plausibility, accessibility, opening calendars, and available time. A validator's own \code{valid=True} output cannot serve as the sole ground truth for measuring that validator.
+
+Grounded answer quality should be assessed at the claim level. Reviewers can label each factual claim as supported by the retrieved OSM record, supported by a cited web source, unsupported, or contradicted. This makes it possible to distinguish a correct place name from a fabricated price or an unqualified opening-hour statement. Human ratings of relevance, clarity, and language quality can supplement automated text similarity. BLEU and ROUGE are available as established text-overlap measures \cite{papineni2002bleu,lin2004rouge}, but are insufficient by themselves for open-ended travel advice: a faithful paraphrase may have low overlap, while a fluent answer may repeat reference words and still contain a false claim.
+
+Route evaluation requires a reference routing source and a declared travel mode. For each stop pair, the system's estimated distance can be compared with a road-network distance and the error distribution reported. Since the current route helper returns no estimated duration, travel-time error cannot yet be calculated for the default itinerary path. If a road-routing API is integrated, evaluation should record its date, mode, avoidances, and API version because these affect routes and traffic assumptions.
+
+\section{Proposed Runtime and Reliability Evaluation}
+
+No latency, throughput, provider error, or load-test measurements are included in the repository snapshot. A reproducible runtime study should name the host CPU/RAM, Python version, dependency lock, PostgreSQL version and row count, network conditions, model/provider and region, concurrency schedule, warm-up duration, and total request count. It should separate database-only search, deterministic draft generation, live provider-backed generation, and confirmation transactions. Those routes have different cost and latency profiles and should not be aggregated into one number.
+
+For each endpoint and concurrency level, report median and 95th-percentile latency, completed requests per second, status-code counts, timeout rate, database pool saturation if configured, and external-provider failures. Repeat each run and report variability. A load test against a mocked model does not establish the behavior of an external provider, and a local developer server with Flask debug enabled is not representative of a production WSGI deployment.
+
+\section{Discussion of Current Results}
+
+The available evidence supports a modest conclusion. The data-preparation summary describes a broad filtered candidate set; the SQL model and query tool provide a concrete geographic search mechanism; the draft planner has a deterministic offline execution path; and the validator encodes several useful structural and temporal safeguards. A safe, mocked regression suite is present for representative request and response cases. This is meaningful implementation evidence for a capstone prototype.
+
+The evidence does not support the numerical claims found in the earlier draft of this report about retrieval hit rate, multilingual BLEU/ROUGE scores, itinerary feasibility percentages, zero hallucination, or concurrent throughput. The repository contains no corresponding labeled test set or run log. Such values have been removed from the report rather than reused as if they were measured. Similarly, the presence of \code{chromadb}, \code{sentence-transformers}, and \code{pgvector} in dependencies or the container image does not establish a working vector retrieval benchmark in the default itinerary flow.
+
+Several implementation constraints directly affect interpretation:
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+    \item \textbf{Planner personalization is limited.} The baseline uses a fixed slot schedule and coarse dining classification. User preference and budget fields are accepted but not comprehensively scored or validated.
+    \item \textbf{Retries may not improve the draft.} The orchestrator can return validator feedback for up to two retries. The deterministic selection routine does not perform an explicit search over alternatives in response to each error, so retries are a control-flow feature whose practical value should be tested.
+    \item \textbf{Road feasibility remains unknown.} Approximate distances are reported without drive times. Time gaps between visits cannot be certified as sufficient for travel in the default path.
+    \item \textbf{Data freshness and detail vary.} Null hours and prices limit concrete guidance; a count of records does not establish that records are current or tourism-relevant.
+    \item \textbf{The manifest has an unresolved count mismatch.} A release-level import audit is needed to reconcile duplicate rows and verify the deployed staging-table count.
+\end{enumerate}
+
+\section{Recommended Evaluation Sequence}
+
+The next evaluation cycle should proceed in an order that limits confounding:
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+    \item Rerun the importer in dry-run mode from the checked-in OSM extract; produce per-layer counts, an explicit duplicate-ID file, and a reconciled final count.
+    \item Load a frozen copy into a test PostgreSQL database, record the schema version, and query total rows and field completeness.
+    \item Preserve the recorded unittest outcome with the exact checkout state. Then add direct tests for validator boundary conditions and confirm-service transaction behavior, and rerun the suite after each relevant code change.
+    \item Create a blinded, manually labeled query set and score text, category, and radius retrieval separately.
+    \item Evaluate deterministic itinerary drafts on a fixed request set. Compare validator output with an independent human or reference-rule audit, and report each constraint separately.
+    \item Evaluate the provider-backed chat and planner only after recording model names, prompts, parameters, provider region, and exact request/response outputs under a privacy-safe protocol.
+    \item Conduct performance and failure testing against a production-like WSGI process and database, reporting the configuration alongside all latency and error results.
+\end{enumerate}
+
+\section{Chapter Summary}
+
+The current report records descriptive data-processing figures, concrete source-level behavior, and one successful local run of the nine-case regression suite (9 passed, 0 failed, 0 errors). Because database and provider calls were mocked, this run does not establish live integration, model quality, or production reliability. The strongest defensible system result remains that a database-grounded, offline draft-and-validation workflow is implemented with explicit uncertainty around missing opening hours and road travel time. The main empirical work still needed is to verify the imported dataset, measure retrieval relevance, independently audit itinerary feasibility, and benchmark each runtime path separately.

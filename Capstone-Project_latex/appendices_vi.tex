@@ -1,0 +1,188 @@
+\appendix
+
+\chapter{Từ điển dữ liệu và ghi chú tái lập}
+\label{app:data}
+
+\section{Các trường của bản ghi staging}
+
+Mô hình staging OSM lưu bản ghi theo nguồn, không giả định rằng mọi đối tượng OSM có mức chi tiết như điểm tham quan đã biên tập. Bảng~\ref{tab:staging_dictionary} mô tả các cột quan trọng trong \code{OsmAttractionStaging} và migration staging.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{3.3cm} >{\raggedright\arraybackslash}p{3.0cm} >{\raggedright\arraybackslash}p{7.0cm}}
+\caption{Từ điển trường của bảng staging OSM}\\
+\label{tab:staging_dictionary}\\
+\toprule
+\textbf{Trường} & \textbf{Kiểu / ràng buộc} & \textbf{Ý nghĩa}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Trường} & \textbf{Kiểu / ràng buộc} & \textbf{Ý nghĩa}\\
+\midrule
+\endhead
+\code{id} & Khóa chính số nguyên & Định danh nội bộ của dòng staging.\\
+\code{osm\_id} & Chuỗi, duy nhất, không null & Định danh đối tượng nguồn ổn định để khử trùng và truy vết.\\
+\code{osm\_\allowbreak source\_layer} & Chuỗi, không null & Tên lớp shapefile nguồn.\\
+\code{osm\_code} & Số nguyên, tùy chọn & Mã lớp nguồn dạng số nếu có.\\
+\code{fclass} & Chuỗi, không null & Lớp đối tượng OSM gốc.\\
+\code{name} & Chuỗi, không null & Tên hiển thị giữ từ bản ghi nguồn.\\
+\code{category} & Chuỗi, không null & Danh mục du lịch đã chuẩn hóa.\\
+\code{latitude}, \code{longitude} & Double precision, không null & Tọa độ địa lý WGS 84 theo độ thập phân.\\
+\code{address} & Chuỗi, không null & Địa chỉ nguồn nếu có; nếu không thì dùng chuỗi dự phòng nêu rõ tọa độ.\\
+\code{description} & Văn bản, tùy chọn & Mô tả ngắn suy ra từ thông tin OSM được giữ lại.\\
+\code{price}, \code{rating} & Số, tùy chọn & Giá trị chưa biết được giữ null theo chuẩn nhập.\\
+\code{opening\_hours} & Chuỗi, tùy chọn & Chuỗi giờ OSM; định dạng có thể phức tạp hoặc bị thiếu.\\
+\code{phone\_number}, \code{image\_url} & Chuỗi, tùy chọn & Siêu dữ liệu liên hệ và hình ảnh khi có.\\
+\code{language} & Chuỗi & Nhãn ngôn ngữ được quy trình nhập gán.\\
+\code{tags}, \code{aliases} & JSONB & Thẻ tìm kiếm và tên thay thế.\\
+\code{raw\_properties} & JSONB & Giá trị thuộc tính gốc để truy vết.\\
+\url{imported_to_attraction}, \url{attraction_id} & Boolean và chuỗi & Trạng thái chuyển đổi và liên kết tùy chọn tới attraction lõi của ứng dụng.\\
+\code{created\_at}, \code{updated\_at} & Timestamp & Thời điểm tạo và cập nhật dòng.\\
+\bottomrule
+\end{longtable}
+
+\section{Danh sách kiểm tra tái lập nhập dữ liệu}
+
+Tập lệnh nhập được thiết kế để hỗ trợ rà soát dry-run trước khi bật ghi dữ liệu. Hồ sơ phát hành nên bao gồm:
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+    \item thời điểm trích xuất và thông báo giấy phép từ gói dữ liệu nguồn;
+    \item checksum tệp cho ba lớp đầu vào;
+    \item phiên bản Python chính xác cùng phiên bản phụ thuộc đã cài;
+    \item tùy chọn bộ nhập, gồm chế độ khử trùng và kích thước lô;
+    \item số dòng thô, số bị loại theo từng bộ lọc và số giữ lại theo lớp;
+    \item báo cáo trùng lặp đọc được bằng máy, liệt kê từng OSM ID bị lặp;
+    \item tổng dòng staging cuối cùng và mẫu bản ghi truy vấn từ PostgreSQL;
+    \item phiên bản lược đồ cơ sở dữ liệu hoặc migration dùng khi nạp.
+\end{enumerate}
+Dữ liệu này sẽ giải quyết điểm chưa rõ giữa số ứng viên, số duy nhất và số trùng trong bản tổng hợp hiện tại. Bản phát hành an toàn cũng nên giữ báo cáo dry-run bên cạnh báo cáo lần áp dụng để so sánh thay đổi dự kiến với dữ liệu đã ghi thật.
+
+\chapter{Bề mặt API và ranh giới yêu cầu}
+\label{app:api}
+
+\section{Các tuyến du lịch và lịch trình chính}
+
+Bảng~\ref{tab:core_api} tóm tắt các tuyến trọng tâm của đề tài. Đường dẫn và mục đích lấy từ namespace Flask-RESTX cùng controller đã đăng ký. Trang Swagger tương tác tại \code{/docs} là tham chiếu chính khi cần xem lược đồ và trạng thái phản hồi chi tiết.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{2.3cm} >{\raggedright\arraybackslash}p{5.0cm} >{\raggedright\arraybackslash}p{6.0cm}}
+\caption{Các endpoint tìm kiếm du lịch và lập lịch chính}\\
+\label{tab:core_api}\\
+\toprule
+\textbf{Phương thức} & \textbf{Đường dẫn} & \textbf{Mục đích / ranh giới}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Phương thức} & \textbf{Đường dẫn} & \textbf{Mục đích / ranh giới}\\
+\midrule
+\endhead
+POST & \url{/api/travel-chatbot/search} & Nhận câu hỏi du lịch bằng ngôn ngữ tự nhiên và cờ tìm kiếm web tùy chọn; trả kết quả tìm kiếm cùng câu trả lời được sinh.\\
+GET & \url{/api/travel-chatbot/metadata} & Đọc siêu dữ liệu địa điểm có phân trang qua controller chatbot du lịch.\\
+GET & \url{/api/travel-chatbot/embeddings} & Tuyến embedding cũ còn trong controller; không phải cơ chế truy xuất mặc định của bộ lập lịch.\\
+POST & \url{/api/itinerary/plan-draft} & Tạo bản nháp; cần ngày chọn và câu truy vấn văn bản hoặc cặp tọa độ hợp lệ; không lưu bản nháp.\\
+POST & \url{/api/itinerary/multi-agent/plan-draft} & Bí danh cho thao tác lập bản nháp.\\
+POST & \url{/api/itinerary/confirm} & Xác nhận và lưu bản nháp bằng tài khoản đã xác minh từ Bearer JWT.\\
+POST & \url{/api/itinerary/multi-agent/confirm} & Bí danh cho thao tác xác nhận.\\
+GET / POST / DELETE & \url{/api/itinerary/...} & Các thao tác hiện có để liệt kê, xem chi tiết, tạo, xóa và cập nhật mục lịch trình đã lưu. Xem Swagger để biết phương thức và payload từng tài nguyên.\\
+\bottomrule
+\end{longtable}
+
+\section{Xác thực yêu cầu tạo bản nháp}
+
+Controller tạo nháp nhận ngày, truy vấn văn bản tùy chọn, nhãn điểm đến/khu vực, danh mục, tọa độ, bán kính, sở thích, ngân sách, số điểm dừng tối đa và prompt tùy chọn. Controller từ chối cặp tọa độ chỉ có một giá trị, tọa độ không phải số hoặc ngoài phạm vi, bán kính ngoài khoảng hỗ trợ và nhãn khu vực không có tâm tọa độ. Quy tắc cuối quan trọng vì controller lịch trình không chuyển tên khu vực thành tọa độ.
+
+Bộ điều phối còn kiểm tra giới hạn yêu cầu, gồm số điểm dừng từ một tới mười và giới hạn kết quả tìm kiếm từ một tới một trăm. Ngày quá khứ bị từ chối trong tầng điều phối. Lỗi tìm kiếm được ánh xạ sang trạng thái phản hồi tường minh; cơ sở dữ liệu không khả dụng được báo riêng với đầu vào không hợp lệ và kết quả tìm kiếm rỗng nhưng hợp lệ.
+
+\section{Ranh giới xác nhận bản nháp}
+
+Tuyến xác nhận yêu cầu mã bản nháp đúng định dạng controller mong đợi, ngày chọn và danh sách mục không rỗng. Tuyến đọc Bearer token trong header Authorization, xác minh chữ ký cùng hạn dùng, lấy người dùng đã xác thực rồi kiểm tra email đã xác minh. Mã người dùng có trong JSON không được chấp nhận làm căn cứ sở hữu.
+
+Dịch vụ xác nhận kiểm tra lại chi tiết bản nháp theo bản ghi staging và lưu lịch trình quan hệ. Lần xác nhận mới thành công trả HTTP 201; yêu cầu trùng đã nhận diện có thể trả HTTP 200. Lỗi xác thực dữ liệu, thiếu nội dung, lỗi phân quyền và lỗi giao dịch được biểu diễn bằng các nhóm phản hồi riêng. Mã trạng thái ở cấp controller là một phần hợp đồng API và cần ổn định nếu thay đổi cách triển khai bộ lập lịch.
+
+\chapter{Danh mục kiểm thử hồi quy và đánh giá}
+\label{app:evaluation}
+
+\section{Các ca hồi quy hiện có}
+
+Chín phương thức kiểm thử trong \url{tests/test_multi_agent_flow.py} tạo thành lớp hồi quy ngoại tuyến nhỏ. Bộ mẫu có 15 bản ghi theo cấu trúc OSM, cho phép kiểm tra hành vi bộ lập lịch mà không cần cơ sở dữ liệu sản xuất. Các hàm nhà cung cấp và cơ sở dữ liệu được giả lập khi cần cô lập controller. Bộ kiểm thử đã được chạy từ thư mục gốc kho mã bằng môi trường ảo của dự án; kết quả được ghi dưới đây. Lần chạy không dùng hoặc ghi vào cơ sở dữ liệu trực tiếp của người dùng.
+
+\begin{longtable}{c >{\raggedright\arraybackslash}p{4.4cm} >{\raggedright\arraybackslash}p{7.4cm} c}
+\caption{Ánh xạ kiểm thử với yêu cầu và kết quả đã ghi nhận}\\
+\label{tab:test_mapping}\\
+\toprule
+\textbf{Mã} & \textbf{Nhóm yêu cầu} & \textbf{Assertion có trong mã nguồn} & \textbf{Kết quả}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Mã} & \textbf{Nhóm yêu cầu} & \textbf{Assertion có trong mã nguồn} & \textbf{Kết quả}\\
+\midrule
+\endhead
+T-01 & Lập lịch ngoại tuyến & Bộ lập lịch trả bản nháp hợp lệ, thành công, có ba điểm và có giá trị vĩ độ/kinh độ. & ĐẠT\\
+T-02 & Hợp đồng API tạo nháp & Tìm kiếm staging giả lập trả HTTP 200 và phản hồi được đánh dấu chưa lưu. & ĐẠT\\
+T-03 & Xác thực đầu vào & Chuỗi ngày không hợp lệ bị từ chối bằng HTTP 400. & ĐẠT\\
+T-04 & Xác thực đầu vào & Ngày đã qua bị từ chối bằng HTTP 400. & ĐẠT\\
+T-05 & Xác thực tọa độ & Có vĩ độ nhưng thiếu kinh độ bị từ chối bằng HTTP 400. & ĐẠT\\
+T-06 & Xác thực tọa độ & Giá trị tọa độ không phải số bị từ chối bằng HTTP 400. & ĐẠT\\
+T-07 & Ánh xạ lỗi & Lỗi cơ sở dữ liệu staging giả lập được ánh xạ sang HTTP 503. & ĐẠT\\
+T-08 & Phân quyền xác nhận & Yêu cầu xác nhận không có Bearer token được ánh xạ sang HTTP 401. & ĐẠT\\
+T-09 & Controller đăng nhập & Phản hồi xác thực giả lập được trả HTTP 200 kèm token và trường người dùng. & ĐẠT\\
+\bottomrule
+\end{longtable}
+
+Lần chạy được thực hiện ngày 21/10/2026 bằng Python 3.10.11 trong môi trường ảo của dự án. Lệnh chạy là \code{venv/Scripts/python.exe -m unittest discover -s tests -p test\_*.py -v}; trình chạy ghi nhận \code{Ran 9 tests in 0.048s; OK}. Cả T-01 đến T-09 đều đạt, không có lỗi hay thất bại. Working tree còn các thay đổi chưa commit, vì vậy kết quả chỉ áp dụng cho bản cục bộ tại thời điểm chạy, không đảm bảo cho revision về sau. Cơ sở dữ liệu và nhà cung cấp được giả lập. Các lần chạy tiếp theo nên ghi trạng thái checkout và đầu ra cụ thể; không đưa token, mật khẩu, hồ sơ người dùng hoặc payload nhạy cảm vào log.
+
+\section{Kiểm thử bổ sung nên có trước phát hành}
+
+Kiểm thử hiện tại tập trung vào tạo nháp thành công và một số ranh giới yêu cầu. Bộ hồi quy rộng hơn nên bao gồm:
+\begin{itemize}[leftmargin=1.8em,itemsep=3pt]
+    \item \textbf{Độ đúng của tìm kiếm:} so sánh kết quả bán kính SQL với phép tính Haversine độc lập; xác minh thứ tự gần trước và việc chỉ giới hạn sau khi lọc bán kính.
+    \item \textbf{Nhập dữ liệu:} kiểm tra ID trùng giữa và trong các lớp, tọa độ lỗi, tên trống, ánh xạ danh mục, giữ null và tính idempotent của upsert trên cơ sở dữ liệu bỏ đi được.
+    \item \textbf{Ranh giới bộ xác thực:} kiểm tra nửa đêm, giờ sai định dạng, lượt ghé không thời lượng, chồng lấn tại điểm bằng nhau, giới hạn 12 giờ, khung giờ đơn giản/phức tạp và tọa độ thiếu.
+    \item \textbf{Ngữ nghĩa bộ lập lịch:} xác minh tính duy nhất, giới hạn số điểm dừng, độ bao phủ ứng viên, kết quả xác định trên bộ mẫu và hành vi khi thiếu nhóm ăn uống hoặc tham quan.
+    \item \textbf{Thử lại:} tạo bộ ứng viên gây lỗi nghiêm trọng rồi kiểm tra phản hồi có làm thay đổi lần lập kế hoạch sau hay chỉ lặp lại bản cũ.
+    \item \textbf{Lưu trữ:} xác minh xác nhận kiểm tra lại dữ liệu staging, ánh xạ OSM ID tới attraction lõi, gán đúng người dùng đã xác thực và rollback toàn bộ khi ép lỗi.
+    \item \textbf{Tích hợp nhà cung cấp:} dùng giả lập để kiểm tra JSON cấu trúc lỗi, phản hồi hạn mức, timeout, dự phòng, thiếu thông tin xác thực và an toàn log.
+    \item \textbf{Kiểm soát truy cập:} kiểm tra JWT hết hạn, sai định dạng hoặc bị sửa, người dùng chưa xác minh, xác nhận lịch của người khác, OTP hết hạn và giới hạn tốc độ.
+\end{itemize}
+
+\section{Mẫu ghi nhận đánh giá}
+
+Khi thu thập phép đo, bảng kết quả cần đủ ngữ cảnh để người đọc diễn giải độc lập. Bảng~\ref{tab:evaluation_record} là mẫu ghi nhận để dùng trong lần chạy tương lai, không phải báo cáo kết quả đã hoàn thành.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Mẫu ghi nhận cho một lần đánh giá trong tương lai}
+    \label{tab:evaluation_record}
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4.0cm} X}
+        \toprule
+        \textbf{Trường} & \textbf{Giá trị cần ghi} \\
+        \midrule
+        Revision nguồn & Git commit hoặc định danh bản lưu trữ \\
+        Phiên bản dữ liệu & Thời điểm trích OSM, checksum tệp, số dòng cơ sở dữ liệu cuối \\
+        Môi trường & Hệ điều hành, CPU, bộ nhớ, phiên bản Python và PostgreSQL \\
+        Cấu hình nhà cung cấp & Model ID, vùng, nhiệt độ, giới hạn đầu ra, chế độ grounding, phiên bản prompt \\
+        Tập truy vấn & Số truy vấn, ngôn ngữ, nhóm danh mục, quy trình gán nhãn \\
+        Chỉ số tìm kiếm & Hit@K, MRR, NDCG theo ngôn ngữ, danh mục và kiểu truy vấn địa điểm \\
+        Chỉ số lịch trình & Tỷ lệ khả thi kiểm tra độc lập và vi phạm từng ràng buộc \\
+        Đánh giá câu trả lời & Phát biểu có căn cứ/thiếu căn cứ, điểm liên quan và độ rõ ràng \\
+        Chỉ số vận hành & Độ trễ p50/p95, thông lượng, lỗi và timeout theo endpoint \\
+        Số lần lặp & Số lần chạy độc lập và cách tính độ biến động hoặc khoảng tin cậy \\
+        Hạn chế & Nhãn thiếu, nhà cung cấp lỗi, lỗ hổng dữ liệu, sai lệch quy trình \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{Lệnh phát triển cục bộ}
+
+README dự án mô tả trình tự phát triển tổng quát dưới đây. Chạy lệnh từ thư mục gốc kho mã sau khi đã cấu hình biến môi trường cục bộ:
+
+\begin{lstlisting}[language=bash,caption={Trình tự phát triển cục bộ được dự án mô tả}]
+python -m venv venv
+pip install -r requirements.txt
+docker compose -f docker-compose.dev.yml up -d
+python scripts/import_all_osm_poi.py --apply --batch-size 1000
+python main.py
+\end{lstlisting}
+
+Khi rà soát bản trích xuất mới, trước tiên nên chạy bộ nhập mà không có \code{--apply}. Cần kiểm tra và áp dụng migration của kho trước khi nhập. Không để máy chủ phát triển bật debug công khai. Với thí nghiệm có thể tái lập, hãy lưu riêng đầu ra lệnh và siêu dữ liệu cấu hình, không lưu bí mật.
+
+\section{Ghi chú kết thúc}
+
+Danh mục này giúp người đọc kiểm tra ranh giới bằng chứng của báo cáo. Báo cáo hiện ghi nhận thống kê tập dữ liệu và một lần chạy hồi quy cục bộ gồm chín ca đều đạt. Cần bổ sung các lần đánh giá có gán nhãn, tích hợp trực tiếp và hiệu năng cùng phiên bản và phương pháp; sau đó mới thay chỉ số dự kiến bằng số đo thực. Khi chưa có các ghi nhận ấy, không đưa số liệu chất lượng mô hình hoặc thông lượng chưa được đo vào báo cáo cuối.

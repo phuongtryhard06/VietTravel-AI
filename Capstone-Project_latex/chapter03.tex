@@ -1,0 +1,155 @@
+\chapter{Dataset and Pre-processing}
+\label{chap:dataset}
+
+\section{Data Sources and Scope}
+
+The main geographic source is a Vietnam extract distributed as OSM shapefiles. The local README identifies it as a Geofabrik Vietnam package obtained in October 2026 and describes the files as derived from OpenStreetMap under the Open Database License. This month and year are reported as source provenance; they do not imply that the extract is current or the latest available version.
+
+The import script, \code{scripts/import\_all\_osm\_poi.py}, processes three layers:
+\begin{itemize}[leftmargin=1.8em,itemsep=3pt]
+    \item \code{gis\_osm\_pois\_free\_1}, containing named points such as restaurants, cafes, hotels, and tourism features;
+    \item \code{gis\_osm\_pofw\_free\_1}, containing places of worship;
+    \item \code{gis\_osm\_natural\_free\_1}, containing selected named natural features.
+\end{itemize}
+The source files also include administrative boundaries, roads, railways, waterways, buildings, and other layers, but the full POI importer limits ingestion to the three layers above. This reduces irrelevant records for the travel catalogue and keeps the main import process focused.
+
+The repository also contains \code{data/osm\_vietnam\_pilot\_sample.json}, a small 15-record fixture used by the regression tests. It has five observed categories, including restaurants, cafes, hotels, Buddhist temples, and mountain attractions. It is a deterministic sample for offline planning behavior, not a representative statistical sample of the national dataset.
+
+\section{Candidate Filtering and Standardization}
+
+The importer's allow-list maps OSM feature classes (\code{fclass}) into user-facing categories and broader groups. It includes dining and lodging features as well as attractions, parks, museums, places of worship, memorials, and selected natural features. The filter removes records without a display name, feature classes outside the allow-list, and coordinates outside the configured Vietnam bounding box. The implemented bounds are latitude $8.0^\circ$ to $24.0^\circ$ and longitude $102.0^\circ$ to $110.0^\circ$. These bounds are a pragmatic rectangle, not an administrative-boundary polygon.
+
+For a retained record, the importer preserves the source layer, OSM identifier, OSM class and numeric code, name, coordinates, raw properties, and tags. It creates a standardized category and summary description. If no usable address is present, the configured fallback is the explicit Vietnamese text \textit{Chưa có địa chỉ cụ thể; dùng tọa độ OpenStreetMap}. Unknown price, rating, opening hours, phone number, and image URL remain null. These choices preserve data provenance and avoid converting missing information into fabricated facts.
+
+The import command defaults to an analytical dry run; the \code{--apply} option enables database writes. Batch size is configurable, with the documented default of 1,000. The staging table enforces a unique OSM identifier, and the importer uses an upsert strategy keyed by \code{osm\_id} to update an existing source record or insert a new one. The migration defines JSONB columns for tags, aliases, and raw properties, which allows source detail to be retained without flattening every OSM attribute into a separate relational column.
+
+The transformation path can be summarized as a sequence of source-preserving filters. Figure~\ref{fig:poi_ingestion_pipeline} reflects the importer defaults: database writes occur only when \code{--apply} is supplied.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        databox/.style={draw=black, fill=black!4, rounded corners=2pt,
+            align=center, text width=3.25cm, minimum height=2.05cm,
+            inner sep=1.5mm, font=\small},
+        dataflow/.style={-{Stealth[length=2mm]}, thick, draw=black},
+        node distance=4mm
+    ]
+        \node[databox] (source) {Vietnam OSM extract\\three selected point layers};
+        \node[databox, right=of source] (filter) {Point geometry and Vietnam bounds\\require a name and allowed feature class};
+        \node[databox, right=of filter] (normalize) {Map categories\\retain source IDs and tags\\leave unknown fields null};
+        \node[databox, right=of normalize] (load) {Deduplicate by \code{osm\_id}\\default: dry-run summary\\optional: batched database upsert};
+        \draw[dataflow] (source) -- (filter);
+        \draw[dataflow] (filter) -- (normalize);
+        \draw[dataflow] (normalize) -- (load);
+    \end{tikzpicture}
+    \caption{Code-derived workflow for filtering and loading geographic POIs}
+    \label{fig:poi_ingestion_pipeline}
+\end{figure}
+
+\section{Recorded Dataset Profile}
+
+The committed file \code{data/osm\_full\_ingestion\_summary.json} is the source for the descriptive profile in this section. It records 30,941 filtered candidates and 30,839 unique identifiers. Its layer-level figures and rejection counts are reproduced in Table~\ref{tab:osm_layer_profile}. These are processing-summary values; they are not a live query of the database.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Layer-level filtering values recorded in the ingestion summary}
+    \label{tab:osm_layer_profile}
+    \renewcommand{\arraystretch}{1.2}
+    \small
+    \setlength{\tabcolsep}{3.5pt}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}X r r r r r}
+        \toprule
+        \textbf{Source layer} & \textbf{Input} & \textbf{Candidates} & \textbf{No name} & \textbf{Class} & \textbf{Coords} \\
+        \midrule
+        OSM POIs & 75,037 & 28,482 & 23,862 & 22,678 & 15 \\
+        Places of worship & 1,375 & 1,127 & 248 & 0 & 0 \\
+        Natural features & 34,009 & 1,332 & 32,596 & 81 & 0 \\
+        \midrule
+        \textbf{Total} & \textbf{110,421} & \textbf{30,941} & \textbf{56,706} & \textbf{22,759} & \textbf{15} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+The category-group totals in the same file sum to 30,839, as shown in Table~\ref{tab:osm_group_profile}. The distribution is concentrated in food and accommodation categories. A high count of a category does not imply high quality or completeness: it is simply a count of classified identifiers in the summary.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Unique POI counts by standardized category group}
+    \label{tab:osm_group_profile}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabularx}{0.78\textwidth}{>{\raggedright\arraybackslash}X r r}
+        \toprule
+        \textbf{Category group} & \textbf{Records} & \textbf{Share} \\
+        \midrule
+        Food and dining & 18,317 & 59.40\% \\
+        Lodging & 6,454 & 20.92\% \\
+        Tourism & 2,082 & 6.75\% \\
+        Nature & 1,311 & 4.25\% \\
+        Spiritual places & 1,129 & 3.66\% \\
+        Culture & 789 & 2.56\% \\
+        History & 643 & 2.08\% \\
+        Entertainment & 114 & 0.37\% \\
+        \midrule
+        \textbf{Total} & \textbf{30,839} & \textbf{100.00\%} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{A reconciliation issue in the manifest}
+
+The summary records 30,941 candidates and 30,839 unique identifiers, a difference of 102 rows. It separately reports 100 duplicate identifiers, broken down as 27 cross-layer and 73 within-layer duplicates. These fields do not reconcile arithmetically: the stated duplicate count is two lower than the difference implied by the candidate and unique totals. The category-group counts sum to the unique total of 30,839. The discrepancy is therefore reported rather than silently corrected; the importer should be rerun with a per-identifier audit before these figures are used as a final database acceptance count.
+
+The summary also contains an overlap-analysis block with 30,839 existing staging records and 30,839 updates, while reporting zero inserts and zero deletes. That block represents the state captured by the summary process and does not independently establish the current state of a running PostgreSQL instance. The repository snapshot does not include a database export or a database query result that could verify that the staging table still contains this number of rows. The \code{core\_tables} sub-block lists zero records for Attractions, Users, and Itineraries in the manifest's analysis; those values should not be interpreted as a present-day operational database census.
+
+\section{Relational Representation}
+
+The application uses SQLAlchemy models for account, chat, itinerary, and place data. Table~\ref{tab:application_schema} summarizes the primary entities visible in the ORM and the staging migration. The production-style application tables use mixed-case names such as \code{Users}, \code{Attractions}, and \code{ItineraryItems}, while the OSM staging table uses the lower-case name \code{osm\_attractions\_staging}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Principal relational entities in the inspected application models}
+    \label{tab:application_schema}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{4.0cm} X}
+        \toprule
+        \textbf{Entity} & \textbf{Identifier and links} & \textbf{Purpose and notable fields} \\
+        \midrule
+        Users & Integer \code{user\_id}; parent of conversations and itineraries & Email, password hash, language preference, verification state \\
+        Attractions & String \code{id}; referenced by itinerary items & Curated place details, coordinates, category, optional price and hours \\
+        Conversations & Integer \code{conversation\_id}; foreign key to Users & Start/end time, source language, title \\
+        Messages & Integer \code{message\_id}; foreign key to Conversations & Sender, text, translation, voice URL, JSON place list \\
+        Itineraries & Integer \code{id}; foreign key to Users & Selected date, title, notes, soft-delete flag \\
+        ItineraryItems & Integer \code{id}; links Itineraries and Attractions & Visit time, duration, notes, order index \\
+        Notifications & Integer \code{id}; links Users and Itineraries & Reminder text, scheduled time, sent/read/deleted state \\
+        OTP & Integer \code{id}; keyed by email and purpose in service logic & Verification or password-reset code and expiry \\
+        OSM staging & Integer row ID; unique \code{osm\_id} & OSM source/class, standardized category, GPS, JSONB attributes \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+The separation between \code{osm\_attractions\_staging} and \code{Attractions} is architecturally significant. A staging record is identified by \code{osm\_id}; an itinerary item refers to the application's \code{Attractions.id}. The confirm service must therefore find or create a corresponding application attraction and must re-check the OSM record before persistence. Treating an OSM identifier as if it were already a core attraction key would break referential integrity.
+\section{Spatial and Text Pre-processing}
+
+The importer normalizes feature classes into categories, carries forward source identifiers, and applies a coordinate range check before loading records. For a radius search, \code{poi\_search\_tool.py} uses two stages. First it computes a rectangular bounding range around the search center to reduce candidate rows. It then evaluates the Haversine distance in SQL, excludes rows outside the requested radius, orders retained candidates by increasing distance, and applies the result limit after ordering. This prevents the top results from being selected by table identifier order when the request is spatial.
+
+The distance calculation uses a mean Earth radius of 6,371 km. Given a center $(\phi_c,\lambda_c)$ and record $(\phi,\lambda)$, all angular values are converted to radians. The direct distance is
+\begin{equation}
+    d = 2R\arcsin\sqrt{
+        \sin^2\left(\frac{\phi-\phi_c}{2}\right)
+        + \cos(\phi_c)\cos(\phi)
+          \sin^2\left(\frac{\lambda-\lambda_c}{2}\right)}.
+\end{equation}
+Longitude bounding width is adjusted by the cosine of the center latitude and guarded by a lower bound in the implementation. This is a search optimization; the Haversine condition remains the final radius filter.
+
+Text search uses case-normalized \code{LIKE} predicates across name, category, or feature class, with SQL parameters supplied separately. It is a lexical match rather than a Vietnamese semantic search model. The chat service contains additional intent and feature extraction helpers, but the itinerary API uses its own normalized request fields. Accent normalization, query expansion, and multilingual name alias coverage should not be assumed unless present in the specific path.
+
+\section{Data Quality, Licensing, and Reproducibility}
+
+The data model deliberately permits unknown price, rating, hours, telephone, and image values. This improves epistemic honesty but limits itinerary personalization. If hours are null, the validator emits a warning and asks the traveler to check the schedule. It parses only a simple \code{HH:MM-HH:MM} form when evaluating hours; complex OSM expressions are treated as requiring manual confirmation. A missing address is represented by a fallback string rather than reverse-geocoded locality information.
+
+OSM attribution and database licensing need to be preserved when the dataset is redistributed or publicly served. The source README identifies the ODbL and the data timestamp, but the inspected web interface and API response schema do not show a consistent user-facing attribution field for every place result. A deployment should include the required attribution and a notice describing changes to the database, while retaining a reproducible record of the extract date and importer version.
+
+The project provides enough local artifacts to document the processing design: raw shapefiles, importer code, migration DDL, a data summary, and a compact test fixture. A repeatable dataset release should additionally record the command-line arguments, source-file checksums, Python and package versions, database row counts, and a complete duplicate reconciliation report. Those items make it possible to distinguish a change in the source extract from a change in the transformation code.
+
+\section{Summary}
+
+The source tree contains a concrete national OSM import path and a staging schema designed to preserve source identity and missingness. The committed processing summary describes approximately thirty thousand classified POIs, with food and lodging making up most of the classified entries. It also contains a two-record arithmetic discrepancy in its duplicate accounting. Neither the fixture nor the manifest establishes that all records are currently loaded into the configured database. These qualifications frame the system design and evaluation in the following chapters: data coverage and data quality are separate properties, and both need direct checks before a travel recommendation can be considered reliable.

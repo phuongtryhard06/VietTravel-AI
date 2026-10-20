@@ -1,0 +1,92 @@
+% Báo cáo cuối khóa tiếng Việt; biên dịch bằng XeLaTeX/Tectonic.
+\documentclass[vietnamese]{sicaireport}
+
+\input{metadata}
+\input{metadata_vi}
+\input{preamble}
+
+\begin{document}
+\renewcommand{\contentsname}{Mục lục}
+\renewcommand{\listfigurename}{Danh sách hình}
+\renewcommand{\listtablename}{Danh sách bảng}
+\renewcommand{\chaptername}{Chương}
+\renewcommand{\appendixname}{Phụ lục}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+
+\makecoverpage
+\maketitledetailpage
+
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+\chapter*{Tóm tắt}
+\addcontentsline{toc}{chapter}{Tóm tắt}
+VietTravel AI là trợ lý du lịch xây dựng bằng Flask, hỗ trợ tìm kiếm địa điểm tại Việt Nam và tạo bản nháp lịch trình trong một ngày. Kho mã nguồn kết hợp hai luồng riêng: hỏi đáp du lịch bằng ngôn ngữ tự nhiên và lập lịch trình. Luồng hỏi đáp xác định ngôn ngữ, trích xuất đặc trưng liên quan đến chuyến đi, truy vấn dữ liệu PostgreSQL được nhập từ OpenStreetMap (OSM), rồi yêu cầu nhà cung cấp mô hình ngôn ngữ tạo câu trả lời nếu đã cấu hình thông tin xác thực. Luồng lập lịch truy vấn các điểm quan tâm (POI), mặc định tạo lịch bằng thuật toán xác định, kiểm tra bản nháp theo quy tắc về danh tính, thời gian và tọa độ, sau đó trả kết quả mà chưa lưu. Một thao tác xác nhận riêng, có xác thực, kiểm tra lại và lưu lịch trình vào lược đồ quan hệ của ứng dụng.
+
+Báo cáo mô tả những gì có trong mã nguồn và các tệp kê khai dữ liệu đi kèm. Bản tổng hợp xử lý OSM trên toàn quốc ghi nhận 30.941 ứng viên đã lọc và 30.839 mã định danh duy nhất, nhưng các trường thống kê trùng lặp chưa khớp hoàn toàn với nhau. Kho mã nguồn có bộ dữ liệu thử nghiệm gồm 15 bản ghi và mô-đun unittest gồm chín ca, sử dụng cơ sở dữ liệu và nhà cung cấp giả lập. Bộ kiểm thử đã được chạy trên working tree cục bộ hiện tại bằng môi trường ảo của dự án (Python 3.10.11): cả 9/9 ca đều đạt trong 0,048 giây. Đây là bằng chứng hồi quy giới hạn cho các luồng đã kiểm tra, không phải đánh giá trên cơ sở dữ liệu hoặc nhà cung cấp thật. Chưa có benchmark mô hình hay kiểm thử tải có thể tái lập. Vì vậy, chương kết quả phân biệt hồ sơ dữ liệu và lần chạy hồi quy đã ghi nhận với các phép đo mô hình, hệ thống còn cần thực hiện.
+
+\medskip
+\noindent\textbf{Từ khóa:} trợ lý du lịch, lập lịch trình, OpenStreetMap, PostgreSQL, Flask, kiểm tra xác định, du lịch Việt Nam.
+\clearpage
+
+\renewcommand{\contentsname}{Mục lục}
+\setcounter{tocdepth}{2}
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+
+\chapter*{Danh mục chữ viết tắt}
+\addcontentsline{toc}{chapter}{Danh mục chữ viết tắt}
+\begin{table}[htbp]
+    \centering
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{p{3.2cm} X}
+        \toprule
+        \textbf{Viết tắt} & \textbf{Diễn giải} \\
+        \midrule
+        AI & Trí tuệ nhân tạo \\
+        API & Giao diện lập trình ứng dụng \\
+        CORS & Chia sẻ tài nguyên giữa các nguồn gốc \\
+        GPS & Hệ thống định vị toàn cầu \\
+        Haversine & Công thức tính khoảng cách cung lớn trên mặt cầu \\
+        HTTP & Giao thức truyền tải siêu văn bản \\
+        JSON & Ký pháp đối tượng JavaScript \\
+        JWT & Mã thông báo web JSON \\
+        LLM & Mô hình ngôn ngữ lớn \\
+        MAS & Hệ đa tác tử \\
+        OSM & OpenStreetMap \\
+        OTP & Mã dùng một lần \\
+        POI & Điểm quan tâm \\
+        REST & Chuyển trạng thái biểu diễn \\
+        SQL & Ngôn ngữ truy vấn có cấu trúc \\
+        SMTP & Giao thức truyền thư đơn giản \\
+        UI & Giao diện người dùng \\
+        VND & Đồng Việt Nam \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+\clearpage
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{chapter01_vi}
+\input{chapter02_vi}
+\input{chapter03_vi}
+\input{chapter04_vi}
+\input{chapter05_vi}
+
+\clearpage
+\printbibliography[heading=bibintoc,title={Tài liệu tham khảo}]
+
+\clearpage
+\input{appendices_vi}
+
+\clearpage
+\input{instructor_review_vi}
+
+\end{document}

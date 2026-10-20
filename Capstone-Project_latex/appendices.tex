@@ -1,0 +1,186 @@
+\appendix
+
+\chapter{Data Dictionary and Reproducibility Notes}
+\label{app:data}
+
+\section{Staging Record Fields}
+
+The OSM staging model preserves a source-facing record rather than pretending every OSM feature has the detail of a curated attraction. Table~\ref{tab:staging_dictionary} describes the key columns defined by \code{OsmAttractionStaging} and the staging migration.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{3.3cm} >{\raggedright\arraybackslash}p{3.0cm} >{\raggedright\arraybackslash}p{7.0cm}}
+\caption{OSM staging field dictionary}\\
+\label{tab:staging_dictionary}\\
+\toprule
+\textbf{Field} & \textbf{Type / constraint} & \textbf{Meaning} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Field} & \textbf{Type / constraint} & \textbf{Meaning} \\
+\midrule
+\endhead
+\code{id} & Integer primary key & Internal staging row identifier. \\
+\code{osm\_id} & String, unique, not null & Stable source feature identifier used for deduplication and traceability. \\
+\code{osm\_source\_layer} & String, not null & Name of the source shapefile layer. \\
+\code{osm\_code} & Integer, optional & Numeric source class code when available. \\
+\code{fclass} & String, not null & Original OSM feature class. \\
+\code{name} & String, not null & Display name retained from the source record. \\
+\code{category} & String, not null & Normalized travel-facing category. \\
+\code{latitude}, \code{longitude} & Double precision, not null & Geographic coordinates in WGS 84 decimal degrees. \\
+\code{address} & String, not null & Source address when available; otherwise explicit coordinate-based fallback text. \\
+\code{description} & Text, optional & Brief description derived from retained OSM information. \\
+\code{price}, \code{rating} & Numeric, optional & Unknown values remain null in the import standard. \\
+\code{opening\_hours} & String, optional & OSM hours string; format may be complex or absent. \\
+\code{phone\_number}, \code{image\_url} & String, optional & Contact and image metadata when present. \\
+\code{language} & String & Language label assigned by the import process. \\
+\code{tags}, \code{aliases} & JSONB & Searchable tags and alternative names. \\
+\code{raw\_properties} & JSONB & Original property values retained for traceability. \\
+\url{imported_to_attraction}, \url{attraction_id} & Boolean and string & Promotion state and optional link to the core application attraction. \\
+\code{created\_at}, \code{updated\_at} & Timestamp & Row creation and update times. \\
+\bottomrule
+\end{longtable}
+
+\section{Import Reproduction Checklist}
+
+The repository's import script is designed to support a dry-run review before writes are enabled. A release record should include:
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+    \item the extract timestamp and license notice from the source package;
+    \item file checksums for the three input layers;
+    \item the exact Python version and installed dependency versions;
+    \item importer options, including deduplication mode and batch size;
+    \item raw row counts, per-filter rejection counts, and retained counts by layer;
+    \item a machine-readable duplicate report listing each repeated OSM identifier;
+    \item a final staging row count and a sample of records queried from PostgreSQL;
+    \item the database schema or migration revision used for the load.
+\end{enumerate}
+This checklist would resolve the current ambiguity between the summary's candidate, unique, and duplicate counts. A safe release should also retain the dry-run report alongside the applied-run report so that proposed changes can be compared with actual writes.
+
+\chapter{API Surface and Request Boundaries}
+\label{app:api}
+
+\section{Core Travel and Itinerary Routes}
+
+Table~\ref{tab:core_api} summarizes the routes central to the project topic. The route paths and operation purpose are derived from the registered Flask-RESTX namespaces and controllers. The interactive Swagger page at \code{/docs} is the primary runtime reference for detailed schemas and status responses.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{2.3cm} >{\raggedright\arraybackslash}p{5.0cm} >{\raggedright\arraybackslash}p{6.0cm}}
+\caption{Core travel-search and itinerary endpoints}\\
+\label{tab:core_api}\\
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Purpose / boundary} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Purpose / boundary} \\
+\midrule
+\endhead
+POST & \url{/api/travel-chatbot/search} & Accepts a natural-language travel question and an optional web-search flag; returns search results and a generated response. \\
+GET & \url{/api/travel-chatbot/metadata} & Reads paginated place metadata through the travel-chatbot controller. \\
+GET & \url{/api/travel-chatbot/embeddings} & Legacy embeddings route retained in the controller; it is not the default itinerary retrieval mechanism. \\
+POST & \url{/api/itinerary/plan-draft} & Generates a draft. Requires a selected date and either a text query or a valid coordinate pair; does not persist the draft. \\
+POST & \url{/api/itinerary/multi-agent/plan-draft} & Alias for the draft-planning operation. \\
+POST & \url{/api/itinerary/confirm} & Confirms and persists a draft using the verified account from a Bearer JWT. \\
+POST & \url{/api/itinerary/multi-agent/confirm} & Alias for the confirmation operation. \\
+GET / POST / DELETE & \url{/api/itinerary/...} & Existing list, detail, create, delete, and item-update operations for persisted itineraries. Consult Swagger for the exact method and payload of each resource. \\
+\bottomrule
+\end{longtable}
+
+\section{Draft Request Validation}
+
+The plan-draft controller accepts a date, optional free-text query, destination or area label, category, coordinates, radius, preferences, budget, maximum stop count, and an optional user prompt. It rejects a partial coordinate pair, non-numeric or out-of-range coordinates, a radius outside the supported interval, and an area label without a coordinate center. This last rule is important: the itinerary controller does not translate an area name into a coordinate.
+
+The orchestrator further validates request-level limits, including a stop count from one through ten and a search result limit from one through one hundred. A date in the past is rejected in the orchestration layer. Search failures are mapped to explicit response statuses; database unavailability is reported separately from invalid input and a valid empty search.
+
+\section{Draft Confirmation Boundary}
+
+The confirmation route requires a draft identifier in the form expected by its controller, a selected date, and a non-empty list of itinerary items. It reads the Bearer token from the authorization header, verifies its signature and expiry, obtains the authenticated user, and checks that the user's email is verified. A user identifier included in the JSON body is not accepted as the authority for ownership.
+
+The confirmation service rechecks draft details against staging records and persists a relational itinerary. A successful new confirmation returns HTTP 201; a recognized duplicate request can return HTTP 200. Validation errors, missing data, authorization failures, and transaction errors are represented by distinct response categories. These controller-level response codes are part of the API contract and should remain stable if the planning implementation changes.\chapter{Regression Test and Evaluation Register}
+\label{app:evaluation}
+
+\section{Existing Regression Cases}
+
+The nine test methods in \url{tests/test_multi_agent_flow.py} form a compact offline regression layer. The fixture contains 15 OSM-shaped records and allows planner behavior to be exercised without a production database. Provider and database functions are patched where the test needs to isolate controller behavior. This suite was executed from the repository root in the project virtual environment; the recorded result is provided below. It did not rely on or write to a user's live database.
+
+\begin{longtable}{c >{\raggedright\arraybackslash}p{4.4cm} >{\raggedright\arraybackslash}p{7.4cm} c}
+\caption{Test-to-requirement mapping and observed outcomes}\\
+\label{tab:test_mapping}\\
+\toprule
+\textbf{ID} & \textbf{Requirement area} & \textbf{Assertion represented in the source} & \textbf{Run} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Requirement area} & \textbf{Assertion represented in the source} & \textbf{Run} \\
+\midrule
+\endhead
+T-01 & Offline planning & The planner returns a successful valid draft with three stops and non-null latitude/longitude values. & PASS \\
+T-02 & Draft API contract & A mocked staging search produces HTTP 200 and a response marked unsaved. & PASS \\
+T-03 & Input validation & An invalid date string is rejected with HTTP 400. & PASS \\
+T-04 & Input validation & A past selected date is rejected with HTTP 400. & PASS \\
+T-05 & Coordinate validation & Supplying latitude without longitude is rejected with HTTP 400. & PASS \\
+T-06 & Coordinate validation & Non-numeric coordinate values are rejected with HTTP 400. & PASS \\
+T-07 & Failure mapping & A mocked staging database error maps to HTTP 503. & PASS \\
+T-08 & Confirmation authorization & A confirmation request without a Bearer token maps to HTTP 401. & PASS \\
+T-09 & Login controller & A mocked authentication service response is returned as HTTP 200 with token and user fields. & PASS \\
+\bottomrule
+\end{longtable}
+
+The recorded run took place on 21 October 2026 with Python 3.10.11 from the project virtual environment. The command was \code{venv/Scripts/python.exe -m unittest discover -s tests -p test\_*.py -v}; the runner reported \code{Ran 9 tests in 0.048s; OK}. All cases T-01 through T-09 passed, with zero failures and zero errors. The working tree contained uncommitted changes, so the outcome applies to that local snapshot and does not guarantee later revisions. Database and provider calls were mocked. Future runs should record their exact checkout state and output; logs must not include tokens, passwords, personal user records, or sensitive provider payloads.
+
+\section{Additional Tests Recommended Before Release}
+
+The current tests focus on happy-path draft creation and several request boundaries. A broader regression suite should cover these areas:
+\begin{itemize}[leftmargin=1.8em,itemsep=3pt]
+    \item \textbf{Search correctness:} compare SQL radius results with an independent Haversine calculation; verify nearest-first order and ensure the limit is applied after radius filtering.
+    \item \textbf{Data ingestion:} test duplicate IDs across and within layers, malformed coordinates, empty names, category mappings, null preservation, and upsert idempotency against a disposable database.
+    \item \textbf{Validator boundaries:} test midnight edge cases, malformed time values, zero-length visits, overlap at equality, the 12-hour maximum, simple opening-hour ranges, complex hours, and missing coordinates.
+    \item \textbf{Planner semantics:} verify uniqueness, stop-count limits, candidate coverage, deterministic output for a fixed fixture, and behavior when dining or sightseeing categories are absent.
+    \item \textbf{Retries:} construct a candidate set that triggers a hard error and verify whether feedback changes the second attempt or merely repeats the original plan.
+    \item \textbf{Persistence:} verify that confirmation revalidates current staging data, maps OSM IDs to core attractions, assigns the authenticated user, and rolls back all writes on a forced failure.
+    \item \textbf{Provider integration:} use provider mocks to test malformed structured output, quota responses, timeout, fallback, missing credentials, and safety of logs.
+    \item \textbf{Access control:} test expired, malformed, and tampered JWTs; unverified users; attempts to confirm another user's draft; and OTP expiry and rate limits.
+\end{itemize}
+
+\section{Evaluation Record Template}
+
+When measurements are collected, the results table should include enough context to be independently interpreted. Table~\ref{tab:evaluation_record} is a blank record template, not a report of completed measurements.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Evaluation record template for a future run}
+    \label{tab:evaluation_record}
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4.0cm} X}
+        \toprule
+        \textbf{Field} & \textbf{Value to record} \\
+        \midrule
+        Source revision & Git commit or archive identifier \\
+        Dataset version & OSM extract timestamp, file checksums, final database row count \\
+        Environment & OS, CPU, memory, Python and PostgreSQL versions \\
+        Provider settings & Model ID, region, temperature, output limit, grounding mode, prompt revision \\
+        Query set & Number of queries, languages, category mix, annotation procedure \\
+        Search metrics & Hit@K, MRR, NDCG by language, category, and location-query type \\
+        Itinerary metrics & Independent feasibility rate and per-constraint violations \\
+        Answer review & Supported factual claims, unsupported claims, relevance and clarity ratings \\
+        Runtime metrics & p50 / p95 latency, throughput, error and timeout rates by endpoint \\
+        Repetitions & Number of independent runs and variance or confidence interval method \\
+        Limitations & Missing labels, provider outages, data gaps, and deviations from protocol \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{Local Development Commands}
+
+The project README describes the following broad development sequence. Commands should be run from the repository root, after local environment values have been configured:
+
+\begin{lstlisting}[language=bash,caption={Local development sequence documented by the project}]
+python -m venv venv
+pip install -r requirements.txt
+docker compose -f docker-compose.dev.yml up -d
+python scripts/import_all_osm_poi.py --apply --batch-size 1000
+python main.py
+\end{lstlisting}
+
+The importer should first be run without \code{--apply} when reviewing a new source extract. The current repository's migrations should be checked and applied before the import. The development server should not be exposed publicly with debug mode enabled. For reproducible experiments, capture command output and configuration metadata separately from secrets.
+
+\section{Closing Note}
+
+This register is intended to make the report's evidence boundary easy to audit. The current report records a dataset summary and a passing nine-case local regression run. Future labeled evaluations and live integration/performance runs should be added with versions and methodology, then used to replace planned metrics with measured results. Until those records exist, numerical model-quality or throughput claims should remain out of the final report.

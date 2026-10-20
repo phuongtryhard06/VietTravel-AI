@@ -1,0 +1,56 @@
+\chapter{Team Member Review and Comment}
+\label{chap:team_review}
+
+\section{Team Photograph}
+\label{sec:team_photograph}
+
+\begin{figure}[htbp]
+    \centering
+    \setlength{\fboxrule}{1pt}%
+    \setlength{\fboxsep}{20pt}%
+    \fcolorbox{SamsungGray}{white}{%
+        \parbox{0.88\textwidth}{%
+            \centering\vspace{1.5cm}
+            \sffamily\fontsize{13pt}{16pt}\selectfont\color{SamsungGray}
+            \textbf{< ATTACH A TEAM PICTURE HERE >}\par
+            \vspace{0.4cm}
+            \footnotesize\color{gray}
+            Capstone Project Engineering Team: \memberOne\ \& \memberTwo\par
+            Samsung Innovation Campus --- AI Course (Class \className)\par
+            \vspace{1.5cm}
+        }%
+    }
+    \caption{Capstone Project Engineering Team Photograph}
+    \label{fig:team_photo}
+\end{figure}
+
+\vspace{0.4cm}
+
+\section{Individual Team Member Reviews and Reflections}
+\label{sec:individual_reviews}
+
+\noindent
+\begin{table}[htbp]
+    \centering
+    \caption{Individual Team Member Reviews and Learning Reflections}
+    \label{tab:team_member_comments}
+    \renewcommand{\arraystretch}{1.8}
+    \arrayrulecolor{SamsungGray}
+    \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash\sffamily}p{3.4cm}|>{\raggedright\arraybackslash}X|}
+        \hline
+        \rowcolor{SamsungLightBlue}
+        \multicolumn{1}{|c|}{\sffamily\bfseries\color{SamsungDarkGray}NAME} & 
+        \multicolumn{1}{c|}{\sffamily\bfseries\color{SamsungDarkGray}REVIEW and COMMENT} \\
+        \hline
+        \textbf{\memberOne} \newline \textit{(Team Leader)} & 
+        Leading this capstone project within the Samsung Innovation Campus has been an exceptionally enriching educational and engineering experience. Conceptualizing and implementing an end-to-end Multi-Agent RAG architecture taught me how to bridge abstract deep learning theory with robust, production-grade software engineering. 
+        \newline\newline
+        My primary contributions focused on architecting the multi-agent orchestration state graph, developing the constraint-satisfaction itinerary planner with TSP route optimization, implementing the asynchronous notification scheduler daemon, and establishing the RESTful API gateway. Resolving the trade-offs between LLM reasoning latency, hallucination prevention, and strict relational database persistence provided invaluable practical insights into modern AI systems engineering. I am deeply grateful to our instructor Dr. Tran Quang Quy for his rigorous academic mentorship and to my teammate Than Phu Cuong for his seamless collaboration throughout the project lifecycle. \\
+        \hline
+        \textbf{\memberTwo} & 
+        Participating in this capstone project allowed me to deepen my expertise in data engineering, natural language processing, and rigorous empirical evaluation. Curating and normalizing a massive geospatial repository of over 30,000 OpenStreetMap POIs alongside 1,115 deeply annotated Ho Chi Minh City cultural attractions highlighted the paramount importance of data quality in real-world artificial intelligence applications.
+        \newline\newline
+        My responsibilities centered on building the vector database infrastructure using ChromaDB and multilingual Sentence-Transformers, designing the composite hybrid scoring algorithm, and conducting systematic quantitative benchmarks (Hit Rate@K, MRR, NDCG, and concurrency stress testing). This project gave me firsthand experience with vector search mechanics, high-concurrency database connection pooling, and the operational intricacies of deploying NLP models. Working alongside Nguyen Minh Phuong was a rewarding collaborative journey, and the knowledge gained from the SIC AI Course will serve as a strong foundation for my future career. \\
+        \hline
+    \end{tabularx}
+\end{table}

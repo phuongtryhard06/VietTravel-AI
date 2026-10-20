@@ -1,0 +1,93 @@
+\chapter{Công trình liên quan}
+\label{chap:related_work}
+
+\section{Các hệ thống gợi ý du lịch}
+
+Gợi ý du lịch là bài toán hỗ trợ quyết định phụ thuộc nhiều vào ngữ cảnh. Du khách lựa chọn kết hợp điểm tham quan, ăn uống, lưu trú và phương tiện theo giới hạn về địa điểm, ngày đi, thời gian, chi phí, nhu cầu của nhóm và sở thích cá nhân. Bài toán này khác với xếp hạng một món hàng đơn lẻ vì các lựa chọn tạo thành cả chuyến đi: thứ tự ghé thăm quan trọng, di chuyển tiêu tốn thời gian và nhiều thông tin có thể không chắc chắn. Các khảo sát về hệ gợi ý du lịch xem phương pháp dựa trên nội dung, lọc cộng tác, dựa trên tri thức và nhận biết ngữ cảnh là những nhóm bổ trợ nhau, chứ không phải một phương pháp duy nhất phù hợp mọi trường hợp \cite{borras2014intelligent,gavalas2014mobile}.
+
+\subsection{Lọc dựa trên nội dung và lọc cộng tác}
+
+Lọc dựa trên nội dung xếp hạng địa điểm bằng các thuộc tính tương tự với sở thích đã khai báo hoặc suy ra của người dùng. Nếu POI được biểu diễn bằng vector đặc trưng $\mathbf{x}_i$, còn hồ sơ sở thích là $\mathbf{u}$, một độ tương đồng thường dùng là
+\begin{equation}
+    \operatorname{cos}(\mathbf{u},\mathbf{x}_i)
+    = \frac{\mathbf{u}^{\mathsf T}\mathbf{x}_i}
+    {\lVert\mathbf{u}\rVert_2\lVert\mathbf{x}_i\rVert_2}.
+\end{equation}
+Phương pháp này có thể gợi ý một địa điểm mới nếu đã có siêu dữ liệu, nhưng chất lượng phụ thuộc vào đặc trưng mô tả đầy đủ và nhất quán. Bản ghi OSM thưa, chỉ có tên, loại và tọa độ, có thể hỗ trợ lọc loại hình và khoảng cách nhưng hầu như không cho biết không khí, khả năng tiếp cận hoặc mức độ phù hợp với một du khách cụ thể. Vì vậy, dự án có danh mục để tìm kiếm, nhưng phần triển khai được khảo sát không có hồ sơ sở thích người dùng đã học hay mô hình gợi ý được huấn luyện.
+
+Lọc cộng tác ước lượng sở thích từ tương tác giữa người dùng và địa điểm. Trong du lịch, tương tác có thể thưa vì mỗi người chỉ đến một điểm đến không thường xuyên, còn người dùng hoặc địa điểm mới có ít lịch sử. PersTour là một ví dụ: phương pháp kết hợp mức độ phổ biến của POI với sở thích người dùng suy ra từ chuỗi ảnh gắn tọa độ, đồng thời cá nhân hóa thời lượng ghé thăm dựa trên thời gian quan sát được tại mỗi POI \cite{lim2015persontour}. Mô hình ORM hiện có ghi nhận tài khoản và lịch trình, nhưng phần mã được kiểm tra không triển khai thuật toán xếp hạng cộng tác hoặc vòng phản hồi đánh giá. Do đó, sẽ không chính xác nếu mô tả hệ thống hiện tại như một bộ gợi ý đã huấn luyện theo nghĩa phân rã ma trận.
+
+\subsection{Lập kế hoạch theo ngữ cảnh và ràng buộc}
+
+Hệ thống nhận biết ngữ cảnh sử dụng các yếu tố như thời gian, vị trí, thời tiết, thành phần đoàn hoặc hoạt động hiện tại bên cạnh sở thích \cite{gavalas2014mobile}. Lịch trình du lịch còn có các ràng buộc cứng có thể kiểm tra tính khả thi: các lượt ghé thăm không nên chồng lấn, phải nằm trong quỹ giờ cho phép và địa điểm phải thuộc khu vực được hỗ trợ. Có thể thực thi các quy tắc này độc lập với mô hình ngôn ngữ.
+
+Bài toán lập lịch trình có thể mô tả bằng cách chọn và sắp thứ tự tập con $\mathcal{S}$ từ các POI ứng viên. Một hàm mục tiêu tổng quát có thể thưởng cho mức liên quan đến người dùng, đồng thời phạt thời gian và khoảng cách:
+\begin{equation}
+    \max_{\mathcal{S},\pi}\;
+    \sum_{i\in\mathcal{S}} u_i
+    - \lambda_d\sum_{j=1}^{|\mathcal{S}|-1} d_{\pi_j,\pi_{j+1}}
+    - \lambda_t\sum_{j=1}^{|\mathcal{S}|} t_{\pi_j},
+\end{equation}
+với các ràng buộc về ngân sách, khung thời gian và tổng thời lượng chuyến đi. Trong đó $u_i$ là độ hữu ích của địa điểm, $\pi$ là thứ tự ghé thăm, $d$ là khoảng cách và $t$ là thời lượng tham quan. Phương trình này mô tả không gian thiết kế hữu ích, không phải hàm tối ưu được bộ lập lịch hiện tại thực thi. Bộ lập lịch xác định hiện dùng một nhóm khung giờ cố định trong ngày và quy tắc ưu tiên ăn uống hoặc tham quan đơn giản khi lựa chọn từ danh sách ứng viên.
+
+\section{Mô hình ngôn ngữ lớn và truy xuất làm căn cứ}
+
+Kiến trúc Transformer dùng cơ chế attention để mô hình hóa quan hệ giữa các phần tử trong chuỗi, là nền tảng của nhiều mô hình ngôn ngữ hiện đại \cite{vaswani2017attention}. Mô hình lớn có thể diễn giải nhiều cách diễn đạt và tạo lời giải thích mạch lạc, phù hợp với giao diện hội thoại. Nghiên cứu mô hình ngôn ngữ few-shot cũng cho thấy prompt có thể định hướng hành vi mà không cần khớp tham số riêng cho tác vụ \cite{brown2020language}. Tuy vậy, câu trả lời sinh ra không mặc nhiên có căn cứ trong một tập dữ liệu địa phương cập nhật. Mô hình có thể khẳng định một thông tin mà các bản ghi được cung cấp không hề hỗ trợ.
+
+Sinh tăng cường truy xuất kết hợp mô hình sinh với bằng chứng bên ngoài được truy xuất khi trả lời \cite{lewis2020retrieval}. Dense Passage Retrieval minh họa cách dùng hai bộ mã hóa để tìm đoạn văn bằng biểu diễn vector đã học; Sentence-BERT cung cấp một phương pháp liên quan để tạo embedding câu phục vụ so sánh ngữ nghĩa \cite{karpukhin2020dense,reimers2019sentence}. Truy xuất sparse như BM25 cung cấp tín hiệu từ vựng bổ trợ, hữu ích với thuật ngữ chính xác \cite{robertson2009probabilistic}. Bộ truy xuất lai có thể kết hợp tương đồng ngữ nghĩa, khớp văn bản, lọc theo loại có cấu trúc và phạm vi địa lý, nhưng mỗi thành phần đều cần được triển khai và đánh giá. Chỉ phụ thuộc vào một cơ sở dữ liệu vector không chứng minh rằng hệ thống đang dùng điểm số lai như vậy.
+
+Kho mã nguồn có thư viện ChromaDB và Sentence-Transformers; \url{poi_search_tool.py} cũng có một truy vấn Chroma chỉ đọc tùy chọn. Tuy nhiên, bộ điều phối lịch trình gọi tìm kiếm PostgreSQL với \code{include\_chromadb=False}. Luồng truy xuất chính dùng bộ lọc văn bản, loại trong SQL và lọc địa lý khi có tọa độ tâm cùng bán kính. Vì vậy, báo cáo xem luồng lập lịch là truy xuất SQL có cấu trúc, không phải một pipeline RAG vector dense đã triển khai mặc định. Trong luồng trò chuyện, kết quả PostgreSQL được chuyển vào hàm tạo câu trả lời bằng mô hình ngôn ngữ; grounding với Google Search là khả năng riêng, tùy cấu hình và khả năng sẵn sàng của nhà cung cấp. Grounding tìm kiếm không làm siêu dữ liệu OSM đầy đủ hơn và cũng không thay thế đánh giá chuyên biệt theo miền.
+
+\section{Điều phối đa tác tử}
+
+Phương pháp đa tác tử giao các vai trò riêng cho các tác tử phần mềm hoặc mô hình ngôn ngữ có tương tác. Các framework như AutoGen và MetaGPT nghiên cứu cách giao tiếp, chuyên môn hóa vai trò cho tác vụ phức tạp \cite{wu2023autogen,hong2023metagpt}. ReAct xen kẽ suy luận với hành động gọi công cụ \cite{yao2023react}, còn Reflexion đưa phản hồi từ bước đánh giá kết quả trước đó trở lại quy trình \cite{shinn2023reflexion}. Những ý tưởng này gợi mở cách chia nhỏ luồng du lịch thành truy xuất, lập lịch, định tuyến và xác thực.
+
+Luồng lịch trình lần lượt gọi các mô-đun ứng dụng. Hàm \url{orchestrator.py} xác thực yêu cầu, tìm POI trong bảng staging, chuyển ứng viên cho bộ lập lịch, kiểm tra bản nháp và thử lại nếu còn lỗi chặn. Controller API đặt \code{execute\_api=False}, nên endpoint mặc định dùng bộ lập lịch Python xác định. Bên gọi trực tiếp có thể bật nhánh Gemini tùy chọn trong \url{planner_agent.py} khi có SDK và thông tin xác thực; API không bật nhánh này.
+
+Các vai trò này là mô-đun phần mềm có đầu vào và đầu ra rõ ràng, không phải các tác tử tự trị chạy đồng thời. Cấu trúc đó giúp kiểm tra từng bước: hệ thống có thể báo thiếu kết quả tìm kiếm, từ chối mã OSM ngoài tập ứng viên và trả cảnh báo riêng. Bộ lập lịch không học từ phản hồi người dùng; bộ xác thực chỉ thực thi những quy tắc đã mã hóa.
+
+\section{Tìm kiếm địa lý và lập tuyến}
+
+Khoảng cách cung lớn giữa hai điểm trên mặt cầu có thể tính bằng công thức Haversine \cite{sinnott1984virtues}. Với vĩ độ $\phi_1,\phi_2$ và kinh độ $\lambda_1,\lambda_2$ tính theo radian:
+\begin{align}
+    a &= \sin^2\left(\frac{\phi_2-\phi_1}{2}\right)
+       + \cos(\phi_1)\cos(\phi_2)
+         \sin^2\left(\frac{\lambda_2-\lambda_1}{2}\right),\\
+    d &= 2R\operatorname{atan2}\left(\sqrt{a},\sqrt{1-a}\right),
+\end{align}
+trong đó $R$ là bán kính Trái Đất. Đây là khoảng cách địa lý, không phải quãng đường trên đường bộ hoặc thời gian di chuyển.
+
+Dự án dùng công thức này theo hai cách liên quan. Hàm tìm kiếm PostgreSQL trước hết lọc bằng hộp giới hạn vĩ độ/kinh độ để giảm số dòng cần xét, sau đó tính khoảng cách Haversine trong SQL để lọc chính xác theo bán kính và sắp xếp gần trước. Bộ trợ giúp định tuyến tính khoảng cách trực tiếp giữa các điểm rồi nhân với hệ số cố định 1,3 để gắn nhãn quãng đường đường bộ ước tính. Thời gian di chuyển được đặt là null và kết quả có cảnh báo; mã nguồn không gọi Mapbox hoặc OSRM trong tuyến lập lịch. Việc nêu rõ mức độ không chắc chắn tốt hơn là tự tạo thời lượng lái xe, nhưng không nên dùng ước lượng này để dẫn đường hoặc khẳng định các khoảng nghỉ giữa chặng là đủ.
+
+Bài toán người bán hàng (TSP) và bài toán định hướng (Orienteering Problem) đưa ra các mô hình chính thức cho việc chọn và sắp thứ tự điểm đến theo giới hạn di chuyển, thời gian \cite{applegate2006traveling,vansteenwegen2011orienteering}. Kho mã nguồn không triển khai bộ giải TSP chính xác hoặc bộ tối ưu mạng lưới đường bộ. Các khung giờ cố định tạo khoảng cách thời gian giữa các lượt ghé thăm; trợ giúp định tuyến chỉ báo khoảng cách ước tính sau khi lập nháp. Bộ tối ưu trong tương lai có thể kết hợp thời lượng theo mạng đường, khung giờ mở cửa và độ hữu ích rõ ràng của người dùng, nhưng cần dữ liệu định tuyến đáng tin cậy và hàm mục tiêu được xác định.
+
+\section{Dữ liệu địa lý mở và chất lượng dữ liệu}
+
+OpenStreetMap là cơ sở dữ liệu bản đồ cộng tác với mức độ bao phủ thuộc tính không đồng đều \cite{haklay2008openstreetmap}. Bản trích xuất mở có thể bao phủ diện tích rộng nhưng không phải danh mục du lịch đã biên tập. Tên, thẻ phân loại, địa chỉ và thông tin hoạt động phụ thuộc vào thực tiễn lập bản đồ tại từng nơi. Kho mã ghi nhận bộ shapefile OSM Việt Nam được lấy vào tháng 10/2026 và cấp phép theo Giấy phép Cơ sở dữ liệu Mở. Tập lệnh nhập chọn các lớp liên quan đến du lịch, đồng thời loại bản ghi thiếu tên hoặc có tọa độ ngoài phạm vi Việt Nam.
+
+Làm sạch dữ liệu ảnh hưởng trực tiếp đến hành vi hệ thống. Loại bản ghi không tên tránh trả nhãn trống; giữ giá và giờ mở cửa ở dạng null tránh tạo độ chính xác giả. Khử trùng mã nguồn là cần thiết khi một đối tượng xuất hiện ở nhiều lớp shapefile. Mặt khác, hộp tọa độ là quy tắc địa lý gần đúng: nó có thể bao gồm điểm ngoài khơi hoặc sát biên giới và không xác nhận một đối tượng thuộc đơn vị hành chính nào. Kết quả chỉ có địa chỉ dạng tọa độ vẫn kém hữu ích hơn địa chỉ đường phố đã xác minh.
+
+\section{So sánh và khoảng trống nghiên cứu}
+
+Bảng~\ref{tab:related_comparison} đối chiếu các nhóm năng lực tổng quát với bằng chứng hiện có trong kho mã. Đây là so sánh mô tả, không phải thí nghiệm đối đầu có kiểm soát.
+
+\begin{table}[htbp]
+    \centering
+    \caption{So sánh năng lực trong thiết kế trợ lý du lịch}
+    \label{tab:related_comparison}
+    \renewcommand{\arraystretch}{1.25}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.0cm} >{\raggedright\arraybackslash}p{4.0cm} X}
+        \toprule
+        \textbf{Phương pháp} & \textbf{Ưu điểm} & \textbf{Hạn chế trong bối cảnh du lịch} \\
+        \midrule
+        Tìm kiếm từ khóa / SQL & Khớp chính xác, bộ lọc có cấu trúc dễ giải thích & Nhạy với cách diễn đạt và chất lượng siêu dữ liệu; không xếp hạng theo sở thích đã học \\
+        Truy xuất vector dense & Có thể khớp các cách hỏi gần nghĩa \cite{karpukhin2020dense,reimers2019sentence} & Cần đường đi embedding/chỉ mục được cấu hình và tập đánh giá mức liên quan; không có trong luồng lập lịch mặc định \\
+        Câu trả lời chỉ từ LLM & Tương tác ngôn ngữ tự nhiên linh hoạt \cite{brown2020language} & Có thể nêu thông tin địa điểm không có căn cứ hoặc lỗi thời; không tự áp đặt ràng buộc lịch \\
+        Sinh có căn cứ truy xuất & Điều kiện hóa nội dung sinh bằng bằng chứng truy xuất \cite{lewis2020retrieval} & Chất lượng phụ thuộc độ bao phủ truy xuất, độ mới của nguồn và mức độ dùng đúng bằng chứng \\
+        Bộ xác thực ràng buộc & Từ chối lặp lại được các trạng thái sai đã định nghĩa & Không thể xác minh quy tắc chưa được biểu diễn, như giao thông trực tiếp, phép tính ngân sách hoặc mọi định dạng giờ mở cửa \\
+        Luồng lập lịch của dự án & Truy xuất ứng viên SQL, lịch xác định, kiểm tra và ranh giới nháp/xác nhận & Chưa đo chất lượng xếp hạng; luồng được khảo sát không tối ưu thời gian đường bộ trực tiếp \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Khoảng trống kỹ thuật mà dự án xử lý không phải là các hệ thống hiện hữu chưa có hội thoại hay chức năng địa lý. Thách thức là tích hợp tập dữ liệu địa lý cục bộ, giao diện web, luồng tạo nháp, xác thực tường minh và lưu trữ có xác thực, đồng thời giữ ranh giới giữa giá trị đã biết và ước lượng. Cơ hội nghiên cứu chính là đánh giá liệu tích hợp này có cải thiện tính hữu ích có căn cứ và khả năng đáp ứng ràng buộc lịch trong các truy vấn du lịch Việt Nam thực tế hay không. Bản chụp hiện tại xác nhận có cơ chế triển khai và tình huống kiểm thử ban đầu, nhưng chưa trả lời câu hỏi thực nghiệm đó.

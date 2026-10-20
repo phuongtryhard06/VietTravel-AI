@@ -1,0 +1,158 @@
+\chapter{Kết quả thực nghiệm và thảo luận}
+\label{chap:results_discussion}
+
+\section{Phạm vi đánh giá và bằng chứng hiện có}
+
+Đánh giá định lượng cần dựa trên tập dữ liệu cố định, truy vấn được gán nhãn, cấu hình hệ thống xác định và đầu ra chạy thử được lưu lại. Bản chụp kho mã có bản tổng hợp xử lý dữ liệu, bộ mẫu nhỏ, mã triển khai và mô-đun kiểm thử. Bộ unittest gồm chín ca đã được chạy trên working tree cục bộ hiện tại; kết quả được ghi dưới đây. Dự án vẫn chưa có benchmark truy xuất POI được gán nhãn, tập đánh giá chất lượng câu trả lời, log đánh giá LLM hoặc báo cáo tải hệ thống có thể tái lập. Vì vậy, chương này trình bày lần chạy hồi quy đã hoàn thành cùng các bằng chứng khác, đồng thời đề xuất cách thu thập số đo mô hình và hệ thống còn thiếu.
+
+Sự phân biệt quan trọng vì thường có ba loại nhận định bị nhầm lẫn. Thứ nhất, quy tắc trong mã nguồn, chẳng hạn từ chối \code{osm\_id} trùng lặp, là hành vi đã triển khai. Thứ hai, kết quả unit test đã chạy cung cấp bằng chứng rằng một số assertion đạt trên working tree được kiểm tra. Thứ ba, chỉ số mô hình như độ chính xác câu trả lời hoặc tính khả thi của tuyến cần tập dữ liệu đánh giá xác định và kết quả đo. Lần chạy dưới đây hỗ trợ nhận định hồi quy trong phạm vi hẹp, nhưng không cung cấp loại bằng chứng thứ ba.
+
+Quy trình đánh giá được đề xuất tách thành ba nhánh để đo riêng truy xuất, tính khả thi của lịch trình và mức độ có căn cứ của câu trả lời. Hình~\ref{fig:evaluation_protocol} tóm tắt loại bằng chứng cần thu thập; sơ đồ không mô tả thí nghiệm đã hoàn thành.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        evalbox/.style={draw=black, fill=black!4, rounded corners=2pt,
+            align=center, text width=3.7cm, minimum height=1.5cm,
+            inner sep=1.5mm, font=\footnotesize},
+        evalflow/.style={-{Stealth[length=2mm]}, thick, draw=black}
+    ]
+        \node[evalbox] (inputs) at (0,0) {Dữ liệu và yêu cầu kiểm thử cố định\\revision và cấu hình xác định};
+        \node[evalbox] (retrieval) at (5,1.9) {Nhánh truy xuất\\POI liên quan đã gán nhãn\\Hit@K, MRR, NDCG};
+        \node[evalbox] (planning) at (5,0) {Nhánh lịch trình\\yêu cầu du lịch cố định\\rà soát tính khả thi độc lập};
+        \node[evalbox] (answers) at (5,-1.9) {Nhánh câu trả lời có căn cứ\\nhãn bằng chứng ở mức mệnh đề};
+        \node[evalbox] (report) at (10,0) {Đầu ra và log đo được\\chỉ số, cấu hình, giới hạn};
+        \draw[evalflow] (inputs.east) -- (retrieval.west);
+        \draw[evalflow] (inputs.east) -- (planning.west);
+        \draw[evalflow] (inputs.east) -- (answers.west);
+        \draw[evalflow] (retrieval.east) -- (report.north west);
+        \draw[evalflow] (planning.east) -- (report.west);
+        \draw[evalflow] (answers.east) -- (report.south west);
+    \end{tikzpicture}
+    \caption{Luồng bằng chứng đánh giá đề xuất; chưa có benchmark truy xuất, chất lượng lịch trình, căn cứ câu trả lời hoặc hiệu năng}
+    \label{fig:evaluation_protocol}
+\end{figure}
+
+\section{Kết quả xử lý tập dữ liệu}
+
+Bản tổng hợp đã lưu ghi nhận 110.421 bản ghi đầu vào từ ba lớp được nhập. Trong đó, 30.941 dòng vượt qua lọc ứng viên theo lớp và 30.839 định danh duy nhất được liệt kê sau khử trùng. Bản tổng hợp cung cấp số lượng theo danh mục và số bản ghi bị loại theo từng lớp, được chép lại trong Chương~\ref{chap:dataset}. Các giá trị này mô tả hồ sơ dữ liệu và cho thấy pipeline nhập lọc đáng kể theo tên, lớp và tọa độ.
+
+Các số trong tệp kê khai chưa hoàn toàn tự nhất quán. Lấy 30.839 mã duy nhất khỏi 30.941 ứng viên cho ra 102 dòng trùng, trong khi trường trùng lặp tường minh báo 100. Tổng theo nhóm danh mục bằng 30.839. Đây là phát hiện về chất lượng dữ liệu, không phải kết quả đã được tự hiệu chỉnh. Lần đối soát nhập mới cần xuất từng mã OSM trùng cùng lớp nguồn xuất hiện, sau đó khớp lại số tổng trước khi báo cáo số bản ghi được chấp nhận cuối cùng.
+
+Bản tổng hợp để null các giá trị chưa biết về giá, đánh giá và giờ mở cửa; đồng thời định nghĩa địa chỉ dự phòng từ tọa độ. Đây là lựa chọn thiết kế tích cực vì pipeline không thay thông tin thiếu bằng giá trị tự tạo. Đổi lại, mức hữu dụng của danh mục thay đổi theo trường: một điểm có thể tìm thấy theo địa lý nhưng thiếu chi tiết để trả lời địa điểm có mở cửa, giá phải chăng hoặc phù hợp để ghé thăm không. Kho mã không công bố tỷ lệ đầy đủ theo từng trường, nên chưa thể tính tỷ lệ hoàn chỉnh từ bằng chứng đã khảo sát.
+
+\section{Thiết kế kiểm thử chức năng trong kho}
+
+Tệp \code{tests/test\_multi\_agent\_flow.py} định nghĩa chín phương thức unittest. Mô tả mô-đun cho biết kiểm thử dùng bộ mẫu và các lời gọi cơ sở dữ liệu/nhà cung cấp giả lập, không kết nối hay ghi vào PostgreSQL đã cấu hình. Bảng~\ref{tab:declared_tests} tóm tắt assertion của các ca này và kết quả trong lần chạy cục bộ đã ghi nhận.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Các ca kiểm thử hồi quy và kết quả của lần chạy cục bộ đã ghi nhận}
+    \label{tab:declared_tests}
+    \renewcommand{\arraystretch}{1.15}
+    \begin{tabularx}{\textwidth}{c >{\raggedright\arraybackslash}p{4.4cm} >{\raggedright\arraybackslash}X c}
+        \toprule
+        \textbf{STT} & \textbf{Tình huống kiểm thử} & \textbf{Hành vi được assertion kỳ vọng} & \textbf{Kết quả} \\
+        \midrule
+        1 & Bộ lập lịch ngoại tuyến với tọa độ phẳng trong bộ mẫu & Bản nháp hợp lệ, thành công, có ba điểm dừng và có giá trị vĩ độ, kinh độ & ĐẠT \\
+        2 & Endpoint tạo nháp với POI giả lập & HTTP 200, bản nháp hợp lệ và \code{is\_saved=False} & ĐẠT \\
+        3 & Nội dung ngày được chọn sai định dạng & HTTP 400 & ĐẠT \\
+        4 & Ngày chọn nằm trong quá khứ & HTTP 400 và trạng thái yêu cầu không hợp lệ & ĐẠT \\
+        5 & Có vĩ độ nhưng thiếu kinh độ & HTTP 400 & ĐẠT \\
+        6 & Tọa độ không phải giá trị số & HTTP 400 & ĐẠT \\
+        7 & Giả lập lỗi cơ sở dữ liệu staging & HTTP 503 và trạng thái lỗi cơ sở dữ liệu & ĐẠT \\
+        8 & Endpoint xác nhận không có Bearer token & HTTP 401 & ĐẠT \\
+        9 & Đăng nhập với dịch vụ xác thực giả lập & HTTP 200 cùng payload token/người dùng giả lập & ĐẠT \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Các ca này tập trung vào kiểm tra đầu vào, luồng lập lịch ngoại tuyến, ánh xạ trạng thái API và một phần hành vi xác thực. Mô-đun không kiểm tra kết nối PostgreSQL trực tiếp, rollback giao dịch thật, gửi email, nhà cung cấp LLM bên ngoài, grounding Google Search, định tuyến đường thực tế hoặc tải đồng thời. Mô-đun cũng không chấm mức liên quan hay tính đúng sự thật của câu trả lời. Lần chạy đạt cung cấp bằng chứng hồi quy hữu ích nhưng không phải bằng chứng về độ tin cậy sản xuất hoặc chất lượng mô hình.
+
+Lần chạy được thực hiện ngày 21/10/2026 từ thư mục gốc kho mã bằng Python 3.10.11 trong môi trường ảo của dự án. Lệnh sử dụng là \code{venv/Scripts/python.exe -m unittest discover -s tests -p test\_*.py -v}; trình chạy ghi nhận \code{Ran 9 tests in 0.048s; OK}. Cả chín ca trong Bảng~\ref{tab:declared_tests} đều đạt, không có lỗi hay thất bại. Checkout có các thay đổi chưa commit, nên kết quả áp dụng cho working tree cục bộ tại thời điểm chạy, không đại diện cho một bản phát hành sạch có tag. Các lời gọi cơ sở dữ liệu và nhà cung cấp được giả lập; 0,048 giây là thời gian chạy bộ unit test nhỏ này, không phải benchmark độ trễ ứng dụng.
+
+\section{Hành vi triển khai xác nhận qua mã nguồn}
+
+Có thể xác nhận một số thuộc tính từ phần triển khai mà không cần tuyên bố kết quả benchmark:
+\begin{itemize}[leftmargin=1.8em,itemsep=3pt]
+    \item Endpoint lịch trình đặt \code{execute\_api=False}; đường tạo nháp thông thường dùng bộ lập lịch xác định.
+    \item Bộ điều phối chỉ chuyển POI truy xuất từ cơ sở dữ liệu hoặc được cung cấp tường minh cho bộ lập lịch; bộ xác thực đối chiếu định danh bản nháp với tập ứng viên.
+    \item Hàm tuyến đường trả khoảng cách Haversine ước tính nhân 1,3 và để thời gian di chuyển ở trạng thái chưa biết.
+    \item Bộ xác thực tách lỗi làm bản nháp không hợp lệ khỏi cảnh báo về giờ mở cửa thiếu/phức tạp và thời gian đi chưa biết.
+    \item Endpoint bản nháp trả đối tượng chưa lưu. Một thao tác xác nhận riêng được bảo vệ bằng kiểm tra JWT của người dùng đã xác minh.
+    \item Tìm kiếm bán kính thực hiện lọc sơ bộ hộp tọa độ, lọc Haversine chính xác, sắp theo khoảng cách rồi mới giới hạn số kết quả.
+\end{itemize}
+
+Các thuộc tính này cho thấy ranh giới an toàn phần mềm nhưng không định lượng hiệu quả thực tế. Ví dụ, kiểm tra \code{osm\_id} của điểm dừng thuộc tập ứng viên ngăn bộ lập lịch thêm định danh ngoài tập đó. Nó không xác minh tên OSM chính xác, địa điểm còn hoạt động hay tập ứng viên đã có các lựa chọn tốt nhất.
+
+\section{Đề xuất đánh giá truy xuất}
+
+Nghiên cứu truy xuất tiếp theo nên bắt đầu từ tập truy vấn được gán nhãn thủ công. Mỗi câu hỏi cần một hoặc nhiều OSM ID liên quan cùng lý do liên quan; tập câu hỏi nên bao gồm tên địa điểm chính xác, loại hình, truy vấn chỉ có tên khu vực, tìm quanh tọa độ, tiếng Việt có dấu và cách diễn đạt đa ngôn ngữ. Mỗi truy vấn cần chạy trên bản sao cơ sở dữ liệu cố định với giới hạn và bán kính được ghi lại. Nhãn liên quan phải được chuẩn bị độc lập với kết quả truy xuất để tránh chấm hệ thống theo chính đầu ra của nó.
+
+Với tập truy vấn $\mathcal{Q}$, có thể dùng các thước đo xếp hạng:
+\begin{align}
+    \operatorname{Hit@K}
+    &= \frac{1}{|\mathcal{Q}|}
+       \sum_{q\in\mathcal{Q}}
+       \mathbb{I}\left(R_q^{(K)}\cap G_q\ne\varnothing\right),\\
+    \operatorname{MRR}
+    &= \frac{1}{|\mathcal{Q}|}
+       \sum_{q\in\mathcal{Q}}\frac{1}{\operatorname{rank}_q},\\
+    \operatorname{NDCG@K}
+    &= \frac{\operatorname{DCG@K}}{\operatorname{IDCG@K}},
+\end{align}
+trong đó $R_q^{(K)}$ là top-$K$ kết quả truy xuất, $G_q$ là tập mã liên quan và $\operatorname{rank}_q$ là vị trí liên quan đầu tiên. Hit@K cho biết có xuất hiện ít nhất một kết quả liên quan đã biết hay không; MRR thưởng thứ hạng cao cho kết quả liên quan đầu tiên; NDCG xử lý mức liên quan theo bậc khi người gán nhãn phân biệt kết quả chính xác, gần đúng và yếu. Bản chụp hiện tại không có giá trị nào trong các chỉ số này.
+
+Tối thiểu, đánh giá nên so sánh tìm kiếm văn bản/danh mục SQL hiện tại với baseline chỉ dựa trên địa lý và một baseline ngữ nghĩa được mô tả rõ nếu dự định triển khai chỉ mục Chroma tùy chọn. Mọi phương pháp phải dùng cùng danh mục và bộ câu hỏi cố định. Cần báo cáo theo loại truy vấn và ngôn ngữ vì điểm tổng thể có thể che hiệu năng kém với tên địa phương, tên hành chính hoặc câu hỏi không phải tiếng Việt. Chỉ số xếp hạng không đồng nghĩa với độ chính xác thực tế của câu trả lời.
+
+\section{Đề xuất đánh giá lịch trình và câu trả lời}
+
+Với bản nháp lịch trình, chỉ số chính hữu ích là tỷ lệ khả thi do bên độc lập kiểm tra:
+\begin{equation}
+    \operatorname{FeasibilityRate}
+    = \frac{\text{số bản nháp đạt mọi ràng buộc cứng đã định nghĩa}}
+           {\text{số bản nháp được rà soát}}.
+\end{equation}
+Danh sách ràng buộc cứng cần gồm sự hiện diện trong tập ứng viên, điểm dừng trùng lặp, tọa độ hợp lệ, khoảng giờ hợp lệ, chồng lấn, tổng thời gian trong ngày và các quy tắc giờ mở cửa có thể kiểm tra. Do bộ xác thực chỉ triển khai một phần ràng buộc du lịch thực tế, người đánh giá hoặc bộ kiểm tra độc lập cũng cần xem xét tính hợp lý của tuyến, khả năng tiếp cận, lịch mở cửa và quỹ thời gian. Kết quả \code{valid=True} của chính bộ xác thực không thể là chuẩn sự thật duy nhất để đo bộ xác thực.
+
+Chất lượng câu trả lời có căn cứ nên được đánh giá ở mức từng mệnh đề. Người rà soát gắn nhãn mỗi phát biểu thực tế là được bản ghi OSM hỗ trợ, có nguồn web trích dẫn hỗ trợ, không có căn cứ hoặc bị mâu thuẫn. Cách này phân biệt được tên địa điểm đúng với giá vé bịa đặt hay phát biểu giờ mở cửa thiếu điều kiện. Có thể bổ sung đánh giá của con người về mức liên quan, rõ ràng và chất lượng ngôn ngữ. BLEU và ROUGE là các thước đo độ trùng lặp văn bản đã được nghiên cứu \cite{papineni2002bleu,lin2004rouge}, nhưng riêng chúng không đủ cho tư vấn du lịch dạng mở: một bản diễn đạt trung thành có thể trùng từ thấp, trong khi câu trả lời trôi chảy có thể lặp từ của câu chuẩn mà vẫn chứa phát biểu sai.
+
+Đánh giá tuyến đường cần có nguồn tuyến tham chiếu và phương tiện di chuyển được khai báo. Với mỗi cặp điểm dừng, so sánh khoảng cách ước tính của hệ thống với khoảng cách mạng đường và báo cáo phân phối sai số. Vì hàm tuyến đường hiện không trả thời lượng ước tính, chưa thể tính sai số thời gian cho luồng lịch trình mặc định. Nếu tích hợp API định tuyến, cần ghi ngày truy vấn, phương tiện, tùy chọn tránh đường và phiên bản API vì các yếu tố đó ảnh hưởng đến tuyến và giả định giao thông.
+
+\section{Đề xuất đánh giá hiệu năng và độ tin cậy}
+
+Bản chụp kho không có số đo độ trễ, thông lượng, lỗi nhà cung cấp hoặc kiểm thử tải. Nghiên cứu vận hành có thể lặp lại cần nêu CPU/RAM máy chủ, phiên bản Python, khóa phụ thuộc, phiên bản PostgreSQL và số dòng, điều kiện mạng, mô hình/nhà cung cấp cùng khu vực, lịch đồng thời, thời lượng khởi động và tổng số yêu cầu. Cần tách tìm kiếm chỉ dùng cơ sở dữ liệu, tạo nháp xác định, sinh qua nhà cung cấp trực tiếp và giao dịch xác nhận vì các tuyến này có chi phí, độ trễ khác nhau, không nên gộp thành một con số.
+
+Với từng endpoint và mức đồng thời, nên báo cáo độ trễ trung vị và phân vị 95, số yêu cầu hoàn thành mỗi giây, số lượng mã trạng thái, tỷ lệ timeout, mức bão hòa connection pool nếu có cấu hình và lỗi nhà cung cấp ngoài. Mỗi phép đo cần lặp lại và thể hiện độ biến động. Kiểm thử tải với mô hình giả không chứng minh hành vi của nhà cung cấp thật; máy chủ phát triển cục bộ bật Flask debug cũng không đại diện cho triển khai WSGI sản xuất.
+
+\section{Thảo luận kết quả hiện tại}
+
+Bằng chứng hiện có hỗ trợ một kết luận thận trọng. Bản tổng hợp tiền xử lý mô tả tập ứng viên đã lọc có quy mô đáng kể; mô hình SQL và công cụ truy vấn cung cấp cơ chế tìm kiếm địa lý cụ thể; bộ lập lịch có đường chạy xác định ngoại tuyến; bộ xác thực mã hóa một số biện pháp bảo vệ cấu trúc và thời gian hữu ích. Bộ kiểm thử hồi quy an toàn, dùng giả lập có mặt cho các tình huống yêu cầu/phản hồi tiêu biểu. Đây là bằng chứng triển khai có ý nghĩa cho nguyên mẫu đồ án.
+
+Bằng chứng không hỗ trợ các số liệu từng xuất hiện trong bản nháp trước về hit rate truy xuất, BLEU/ROUGE đa ngôn ngữ, phần trăm khả thi lịch trình, không có hallucination hoặc thông lượng đồng thời. Kho không có tập kiểm thử gán nhãn hoặc log chạy tương ứng. Các giá trị đó đã được loại bỏ thay vì giữ lại như kết quả đo. Tương tự, việc \code{chromadb}, \code{sentence-transformers} và \code{pgvector} xuất hiện trong phụ thuộc hoặc image container không chứng minh có benchmark truy xuất vector đang hoạt động ở luồng lập lịch mặc định.
+
+Một số giới hạn triển khai ảnh hưởng trực tiếp đến cách diễn giải:
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+    \item \textbf{Cá nhân hóa bộ lập lịch còn hạn chế.} Baseline dùng lịch khung giờ cố định và phân loại ăn uống thô. Trường sở thích và ngân sách được nhận nhưng chưa được chấm điểm hoặc xác thực toàn diện.
+    \item \textbf{Thử lại chưa chắc cải thiện bản nháp.} Bộ điều phối có thể trả phản hồi xác thực tối đa hai lần thử lại. Cách chọn xác định không tìm kiếm tường minh phương án khác để xử lý từng lỗi; giá trị thực tế của cơ chế thử lại cần được kiểm thử.
+    \item \textbf{Chưa biết tính khả thi của đường đi.} Khoảng cách gần đúng được trả mà không có thời gian lái xe. Khoảng trống giữa các lượt ghé không thể được chứng nhận đủ cho việc di chuyển ở luồng mặc định.
+    \item \textbf{Độ mới và chi tiết dữ liệu không đồng đều.} Giờ và giá null hạn chế tư vấn cụ thể; số lượng bản ghi không chứng minh rằng dữ liệu mới hoặc phù hợp du lịch.
+    \item \textbf{Sai khác số liệu tệp kê khai chưa được xử lý.} Cần kiểm toán nhập ở cấp bản phát hành để đối soát số trùng và xác minh số dòng staging được triển khai.
+\end{enumerate}
+
+\section{Trình tự đánh giá khuyến nghị}
+
+Chu kỳ đánh giá tiếp theo nên đi theo thứ tự nhằm hạn chế yếu tố gây nhiễu:
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+    \item Chạy lại bộ nhập ở chế độ dry-run từ bản trích xuất OSM đã lưu; xuất số lượng từng lớp, tệp mã trùng tường minh và tổng sau đối soát.
+    \item Nạp bản sao cố định vào PostgreSQL thử nghiệm, ghi phiên bản lược đồ, truy vấn tổng số dòng và độ đầy đủ trường.
+    \item Lưu kết quả unittest đã ghi nhận cùng trạng thái checkout chính xác. Sau đó bổ sung kiểm thử trực tiếp ranh giới bộ xác thực và giao dịch của dịch vụ xác nhận, đồng thời chạy lại sau mỗi thay đổi mã liên quan.
+    \item Tạo bộ truy vấn gán nhãn thủ công, làm mù, rồi chấm riêng truy xuất văn bản, danh mục và bán kính.
+    \item Đánh giá bản nháp xác định trên tập yêu cầu cố định. So sánh đầu ra bộ xác thực với kiểm toán độc lập bằng người hoặc quy tắc tham chiếu, báo cáo riêng từng ràng buộc.
+    \item Chỉ đánh giá chatbot và bộ lập lịch dùng nhà cung cấp sau khi ghi tên mô hình, prompt, tham số, khu vực nhà cung cấp và đầu ra yêu cầu/phản hồi theo quy trình bảo vệ riêng tư.
+    \item Kiểm thử hiệu năng và lỗi trên tiến trình WSGI cùng cơ sở dữ liệu gần với sản xuất; công bố cấu hình cùng mọi kết quả độ trễ và lỗi.
+\end{enumerate}
+
+\section{Tóm tắt chương}
+
+Báo cáo ghi nhận thống kê xử lý dữ liệu mô tả, hành vi có thể truy xuất trong mã nguồn và một lần chạy thành công bộ hồi quy gồm chín ca (9 đạt, 0 trượt, 0 lỗi). Vì cơ sở dữ liệu và nhà cung cấp được giả lập, lần chạy không xác nhận tích hợp trực tiếp, chất lượng mô hình hay độ tin cậy sản xuất. Kết luận hệ thống vững chắc nhất vẫn là đã triển khai luồng truy xuất từ cơ sở dữ liệu, tạo nháp ngoại tuyến và xác thực, đồng thời nêu rõ bất định về giờ mở cửa thiếu và thời gian đi đường. Phần thực nghiệm còn cần xác minh dữ liệu nhập, đo mức liên quan truy xuất, kiểm toán độc lập tính khả thi lịch trình và benchmark riêng từng luồng vận hành.

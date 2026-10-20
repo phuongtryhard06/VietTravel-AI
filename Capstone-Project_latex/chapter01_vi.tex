@@ -1,0 +1,69 @@
+\chapter{Giới thiệu}
+\label{chap:introduction}
+
+\section{Bối cảnh}
+
+Lập kế hoạch du lịch đòi hỏi tổng hợp thông tin thường nằm rải rác trên bản đồ, danh bạ cơ sở kinh doanh, trang đặt dịch vụ, thông tin giao thông công cộng và lời khuyên tại địa phương. Du khách có thể bắt đầu bằng câu hỏi rộng như ăn ở đâu gần một địa danh, rồi bổ sung vị trí, ngày đi, nhịp độ mong muốn hoặc quỹ thời gian. Vì thế, một trợ lý hữu ích cần làm nhiều hơn là tạo văn bản trôi chảy. Hệ thống cần tìm địa điểm có thật, giữ nguyên định danh địa lý, thể hiện rõ phần thông tin còn thiếu và đưa ra lịch trình dễ hiểu, dễ chỉnh sửa.
+
+Bài toán trở nên cụ thể khi danh mục điểm đến được xây dựng từ dữ liệu địa lý do cộng đồng đóng góp. OpenStreetMap là nguồn dữ liệu địa lý cộng tác; mức độ bao phủ và cách gắn thẻ thay đổi theo địa điểm, loại đối tượng \cite{haklay2008openstreetmap}. Một bản ghi có thể có tên và tọa độ nhưng thiếu giờ mở cửa, giá vé hoặc địa chỉ đường phố. Nếu hệ thống tự điền những chỗ trống bằng suy đoán nghe có vẻ hợp lý, câu trả lời có thể hữu ích bề ngoài nhưng khiến du khách hiểu sai. Thách thức thiết kế gồm hai phần: dùng bản ghi có cấu trúc làm căn cứ cho địa điểm, đồng thời giữ nguyên sự không chắc chắn khi dữ liệu chưa đầy đủ.
+
+Các mô hình ngôn ngữ lớn (LLM) giúp diễn giải câu hỏi mở và tạo câu trả lời tự nhiên. Kiến trúc Transformer cung cấp nền tảng linh hoạt cho tương tác này \cite{vaswani2017attention,brown2020language}. Tuy nhiên, văn phong trôi chảy không bảo đảm điểm tham quan tồn tại, giá hiện tại chính xác hay chuyến đi có thể hoàn thành đúng giờ. Sinh tăng cường truy xuất (RAG) giải quyết một phần vấn đề bằng cách điều kiện hóa nội dung được sinh trên bằng chứng truy xuất được \cite{lewis2020retrieval,gao2023retrieval}. Bản thân RAG không bảo đảm dữ liệu mới hoặc đầy đủ, không chứng minh kết quả truy xuất phù hợp, cũng không xác thực lịch trình.
+
+Dự án được khảo sát trong báo cáo này, \textit{ChatbotTravel\_server} (còn được tài liệu mã nguồn gọi là \textit{VietTravel AI}), là ứng dụng web Python phục vụ tìm kiếm du lịch và quản lý lịch trình. Ứng dụng dùng Flask và Flask-RESTX để cung cấp các điểm cuối HTTP, SQLAlchemy để ánh xạ dữ liệu quan hệ và PostgreSQL làm cơ sở dữ liệu dự kiến. Một giao diện web cục bộ được Flask phục vụ. Quy trình dữ liệu xử lý các điểm quan tâm du lịch từ shapefile OSM Việt Nam rồi nạp bản ghi đã chuẩn hóa vào bảng staging PostgreSQL.
+
+Trong mã nguồn có hai luồng tương tác liên quan nhưng tách biệt. Luồng trò chuyện du lịch phát hiện ngôn ngữ, trích xuất ý định và đặc trưng, tìm dữ liệu staging, rồi dùng nhà cung cấp sinh văn bản đã cấu hình khi khả dụng. Luồng lập lịch nhận yêu cầu có cấu trúc, truy vấn các POI ứng viên, mặc định tạo bản nháp bằng bộ lập lịch xác định, xác thực kết quả và trả về mà chưa lưu. Một thao tác xác nhận riêng kiểm tra bearer token rồi lưu lịch đã xác nhận. Cần phân biệt các luồng này: mã nguồn không triển khai một đồ thị tác tử tự trị duy nhất mà mọi câu hỏi chatbot đều đi qua bộ lập lịch.
+
+\section{Phát biểu bài toán}
+
+Dự án hướng đến câu hỏi kỹ thuật thực tiễn sau:
+\begin{quote}
+Làm thế nào kết hợp giao tiếp hội thoại với dữ liệu điểm đến và quy trình lập lịch có ràng buộc trên nền web, đồng thời nêu rõ nguồn và mức độ chắc chắn của thông tin địa điểm, lịch trình và tuyến đường?
+\end{quote}
+
+Câu hỏi này gồm một số vấn đề triển khai:
+\begin{enumerate}[leftmargin=1.8em,itemsep=4pt]
+    \item \textbf{Căn cứ địa lý.} Câu trả lời được sinh nên dùng POI truy xuất trong phạm vi địa lý của yêu cầu, đồng thời giữ mã nguồn và tọa độ để truy vết gợi ý về danh mục.
+    \item \textbf{Thuộc tính chưa đầy đủ.} Bản ghi cộng đồng không phải lúc nào cũng có giá, đánh giá, thông tin liên hệ hoặc giờ mở cửa. Giá trị chưa biết phải được giữ là chưa biết, thay vì âm thầm thay bằng số liệu bịa đặt.
+    \item \textbf{Tính hợp lệ của lịch.} Lịch trình trong ngày cần có điểm dừng duy nhất, tọa độ hợp lệ, khoảng thời gian được định dạng đúng, không chồng lấn và có tổng thời lượng trong giới hạn hợp lý. Khoảng cách địa lý khác với thời gian đi đường và không nên đánh đồng.
+    \item \textbf{Lưu trữ và danh tính.} Kế hoạch xây dựng từ mã OSM không tự động là bản ghi trong bảng \code{Attractions} đã được quản lý của ứng dụng. Hai bước tạo nháp và xác nhận phải giữ được khác biệt này, đồng thời xác minh người dùng đã xác thực trước khi ghi dữ liệu.
+    \item \textbf{Khả năng đánh giá.} Báo cáo đồ án cần phân biệt hành vi mã nguồn, tệp kê khai dữ liệu và khai báo kiểm thử với chất lượng mô hình hoặc hiệu năng đã đo. Mỗi loại bằng chứng trả lời một câu hỏi khác nhau.
+\end{enumerate}
+
+\section{Mục tiêu}
+
+Các mục tiêu kỹ thuật thể hiện trong mã nguồn đã khảo sát gồm:
+\begin{enumerate}[leftmargin=1.8em,itemsep=2pt,parsep=0pt,topsep=3pt]
+    \item Cung cấp REST API và giao diện trình duyệt cho câu hỏi du lịch và lập lịch trình.
+    \item Chuẩn hóa dữ liệu OSM Việt Nam thành POI có tên, loại, tọa độ và thông tin nguồn.
+    \item Tìm kiếm PostgreSQL theo văn bản hoặc loại; tìm theo bán kính khi có tọa độ.
+    \item Tạo lịch trình một ngày từ các POI truy xuất được, mặc định dùng bộ lập lịch xác định.
+    \item Kiểm tra từng bản nháp trong mã ứng dụng và tách riêng lỗi với cảnh báo.
+    \item Cho phép người dùng đã xác minh xác nhận và lưu bản nháp theo giao dịch.
+    \item Nêu giới hạn triển khai và đề xuất kế hoạch đánh giá mà không coi thí nghiệm chưa chạy là kết quả.
+\end{enumerate}
+
+\section{Phạm vi và nội dung ngoài phạm vi}
+
+Báo cáo bao quát bản chụp kho mã nguồn, gồm điểm vào Flask, application factory, controller, mô-đun dịch vụ, mô hình ORM, migration SQL, tập lệnh nhập dữ liệu, tệp OSM, bộ dữ liệu JSON thử nghiệm và mã nguồn kiểm thử hồi quy. Báo cáo cũng mô tả cấu hình phát triển cục bộ dự kiến trong \code{docker-compose.dev.yml} và \code{requirements.txt}.
+
+Phần khảo sát không chứng minh một máy chủ PostgreSQL cụ thể hiện đang chứa đủ số bản ghi trong tệp kê khai. Dự án không kèm tập truy vấn gán nhãn độc lập, hội đồng đánh giá người dùng, nhật ký tải có thể tái lập hay benchmark chất lượng mô hình. Mã nguồn có tích hợp tùy chọn Google Gemini trong bộ lập lịch và một luồng nhà cung cấp riêng cho chatbot; controller lập lịch gọi hàm với \code{execute\_api=False}. Vì thế, mặc định lịch trình được tạo bằng heuristic xác định chứ không phải lời gọi Gemini trực tiếp. Mã nguồn cũng có phần liên quan đến ChromaDB, nhưng bộ điều phối lịch trình chủ động tắt chức năng này khi tìm trong PostgreSQL.
+
+Do đó, nên xem dự án là nguyên mẫu có giao diện và quy tắc xác thực có thể triển khai, không phải bằng chứng về khả năng bao phủ ở quy mô sản xuất hoặc chất lượng gợi ý đã được đo. Bộ xác thực tĩnh có thể loại dữ liệu sai định dạng nhưng không bảo đảm tuyến đường đúng, giờ hoạt động hiện tại, khả năng tiếp cận, giá cả, độ an toàn hay mức hài lòng.
+
+\section{Phương pháp và quy ước bằng chứng}
+
+Báo cáo được chuẩn bị bằng cách kiểm tra tệp mã nguồn và tài liệu có trong kho. Nhận định về triển khai dẫn tới mô-đun hoặc luồng thực thi cụ thể. Thống kê tập dữ liệu trích từ \url{data/osm_full_ingestion_summary.json} và được xem là giá trị trong tệp kê khai, không phải số liệu truy vấn cơ sở dữ liệu trực tiếp. Phần kiểm thử mô tả các ca trong \url{tests/test_multi_agent_flow.py} và lần chạy cục bộ ngày 21/10/2026 bằng môi trường ảo dự án với Python 3.10.11. Cả chín ca đều đạt; lời gọi cơ sở dữ liệu và nhà cung cấp được giả lập. Kết quả chỉ áp dụng cho working tree cục bộ lúc đó, không phải benchmark tích hợp trực tiếp, chất lượng mô hình hay hiệu năng.
+
+Trong toàn báo cáo, bằng chứng được phân thành ba loại:
+\begin{description}[leftmargin=2.1cm,style=standard,itemsep=1pt,parsep=0pt]
+    \item[Đã ghi nhận] Giá trị xuất hiện trong tệp dữ liệu, cấu hình, migration hoặc khai báo kiểm thử đã lưu trong kho.
+    \item[Đã triển khai] Hành vi có thể truy vết tới hàm hoặc luồng controller trong mã nguồn.
+    \item[Chưa đo] Hiệu năng, chất lượng hoặc kết quả vận hành chưa có đầu ra chạy thử có thể tái lập trong bản chụp dự án.
+\end{description}
+Quy ước này đặc biệt quan trọng với Chương~\ref{chap:results_discussion}: tệp kê khai cung cấp thống kê mô tả, mã kiểm thử cho biết ý định kiểm tra, nhưng không loại nào tương đương với benchmark đầu cuối đã được thực hiện.
+
+\section{Đóng góp và bố cục báo cáo}
+
+Đóng góp kỹ thuật chính của kho mã là cấu trúc đầu cuối kết nối chuẩn bị dữ liệu địa lý với ứng dụng du lịch trên web. Bộ nạp lọc và chuẩn hóa các lớp OSM được chọn; mô hình staging quan hệ giữ mã nguồn và thuộc tính gốc; dịch vụ tìm kiếm trả ứng viên từ cơ sở dữ liệu; bộ lập lịch tạo bản nháp theo thời gian; bộ xác thực kiểm tra tập quy tắc cấu trúc và lịch trình. Xác thực tài khoản và lưu lịch trình sau xác nhận là các chức năng bổ sung.
+
+Chương~\ref{chap:related_work} tổng quan hệ gợi ý, cơ chế grounding, điều phối tác tử và lập kế hoạch địa lý liên quan đến thiết kế hiện tại. Chương~\ref{chap:dataset} trình bày bằng chứng OSM, quy tắc nhập, lược đồ và các lưu ý về chất lượng dữ liệu. Chương~\ref{chap:model_configuration} mô tả kiến trúc vận hành và cấu hình mô hình, nhà cung cấp. Chương~\ref{chap:results_discussion} chỉ báo cáo bằng chứng có thể truy xuất trong kho, thảo luận hạn chế và đề xuất quy trình đánh giá tiếp theo. Các phụ lục cung cấp từ điển dữ liệu, danh sách API và danh mục kiểm thử, đánh giá.

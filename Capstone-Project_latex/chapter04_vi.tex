@@ -1,0 +1,173 @@
+\chapter{Cấu hình mô hình}
+\label{chap:model_configuration}
+
+\section{Kiến trúc ứng dụng}
+
+Ứng dụng là một dịch vụ Flask duy nhất, có giao diện trình duyệt và REST API. \code{main.py} nạp biến môi trường, khởi tạo ứng dụng qua \code{create\_app()}, chạy bộ lập lịch nhắc lịch trình và khởi động máy chủ phát triển tại \code{127.0.0.1:5000}. Application factory khởi tạo Flask-CORS, Flask-Mail, SQLAlchemy và Flask-RESTX; phục vụ trang \code{index.html} ở đường dẫn gốc; đồng thời đăng ký các namespace cho xác thực, chat, tìm kiếm du lịch, lịch trình, bản đồ, thông báo và thao tác dữ liệu vị trí cũ. Tài liệu API tương tác được cung cấp tại \code{/docs}.
+
+Hình~\ref{fig:implemented_architecture} cho thấy các kết nối mức cao được mã nguồn hỗ trợ. Sơ đồ tách riêng luồng tìm kiếm du lịch có dùng mô hình ngôn ngữ khỏi luồng lập lịch xác định.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        node distance=8mm and 10mm,
+        box/.style={draw=SamsungBlue, rounded corners=2pt, fill=SamsungLightBlue!45,
+            align=center, text width=4.1cm, minimum width=4.1cm, minimum height=9mm, font=\small},
+        store/.style={draw=SamsungDarkBlue, rounded corners=2pt, fill=white,
+            align=center, text width=4.1cm, minimum width=4.1cm, minimum height=9mm, font=\small},
+        flow/.style={-{Stealth[length=2mm]}, thick, draw=SamsungDarkGray}
+    ]
+        \node[box] (client) {Trình duyệt hoặc REST client bên ngoài};
+        \node[box, below=of client] (api) {Ứng dụng Flask và namespace Flask-RESTX};
+        \node[box, below left=of api] (chat) {Tìm kiếm du lịch\\ngôn ngữ, đặc trưng, câu trả lời có căn cứ};
+        \node[box, below right=of api] (plan) {Luồng lịch trình\\tìm kiếm, lập lịch xác định, xác thực};
+        \node[store, below=of chat] (llm) {Nhà cung cấp Gemini / OpenAI\\cần thông tin xác thực và mạng};
+        \node[store, below=of plan] (db) {PostgreSQL\\bảng staging OSM và bảng ứng dụng};
+        \node[box, below=of db] (confirm) {Xác nhận và lưu trữ có JWT};
+        \coordinate (confirmroute) at ([xshift=8mm]confirm.east);
+        \draw[flow] (client) -- (api);
+        \draw[flow] (api) -- (chat);
+        \draw[flow] (api) -- (plan);
+        \draw[flow] (chat) -- (llm);
+        \draw[flow] (plan) -- (db);
+        \draw[flow] (confirm) -- (db);
+        \draw[flow] (client.east) -- (confirmroute |- client.east)
+            -- (confirmroute |- confirm.east) -- (confirm.east);
+    \end{tikzpicture}
+    \caption{Các luồng ứng dụng đã triển khai và phụ thuộc bên ngoài}
+    \label{fig:implemented_architecture}
+\end{figure}
+
+Giao diện trình duyệt viết bằng HTML, CSS và JavaScript trong \url{src/templates} và \url{src/static}. Giao diện gọi API cho câu hỏi, kết quả địa điểm, tài khoản và thao tác lịch trình. Controller chuyển yêu cầu HTTP thành lời gọi dịch vụ; lớp dịch vụ chứa logic nhà cung cấp, tìm kiếm, xác thực, thông báo và lập lịch; mô hình ánh xạ dữ liệu quan hệ sang đối tượng SQLAlchemy. Cách tổ chức theo lớp giúp nhận biết các luồng yêu cầu chính, dù kho mã vẫn có một số mô-đun cũ cùng tồn tại với thành phần lập lịch mới hơn.
+
+\Needspace{12\baselineskip}
+\section{Tìm kiếm du lịch bằng ngôn ngữ tự nhiên}
+
+Endpoint \url{/api/travel-chatbot/search} nhận một câu hỏi và cờ tùy chọn \code{enable\_web\_search}. Controller từ chối yêu cầu không có câu hỏi, gọi nhận diện ngôn ngữ, rồi chuyển câu hỏi tới dịch vụ trích xuất ý định và đặc trưng có cấu trúc. Mã nguồn có xử lý qua nhà cung cấp và phương án dự phòng, cùng một số luật trích xuất đặc trưng. Dịch vụ tìm kiếm truy vấn dữ liệu staging PostgreSQL để lấy tối đa sáu địa điểm phù hợp. Hàm sinh phản hồi nhận câu hỏi gốc, bản ghi truy xuất, đặc trưng, ngôn ngữ phát hiện và tùy chọn tìm kiếm web. Kết quả có thể gồm câu trả lời, ngôn ngữ, POI, hoạt động gợi ý, câu hỏi tiếp theo và đặc trưng đã trích xuất.
+
+Hình~\ref{fig:chat_search_pipeline} tóm tắt luồng chatbot được triển khai. Grounding bằng Google Search là tính năng tùy chọn của nhà cung cấp; sơ đồ không hàm ý mọi yêu cầu đều thực hiện tìm kiếm bên ngoài.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        chatbox/.style={draw=black, fill=black!4, rounded corners=2pt,
+            align=center, text width=3.2cm, minimum height=2.05cm,
+            inner sep=1.5mm, font=\small},
+        chatflow/.style={-{Stealth[length=2mm]}, thick, draw=black},
+        node distance=4mm
+    ]
+        \node[chatbox] (question) {Câu hỏi người dùng\\cờ tìm kiếm web tùy chọn};
+        \node[chatbox, right=of question] (features) {Nhận diện ngôn ngữ\\trích xuất ý định và đặc trưng};
+        \node[chatbox, right=of features] (search) {Tìm POI trong PostgreSQL\\tối đa sáu kết quả phù hợp};
+        \node[chatbox, right=of search] (answer) {Sinh câu trả lời\\Gemini; có thể grounding bằng Google Search\\có thể dùng nhà cung cấp dự phòng};
+        \draw[chatflow] (question) -- (features);
+        \draw[chatflow] (features) -- (search);
+        \draw[chatflow] (search) -- (answer);
+    \end{tikzpicture}
+    \caption{Luồng tìm kiếm du lịch bằng ngôn ngữ tự nhiên và bước grounding có điều kiện}
+    \label{fig:chat_search_pipeline}
+\end{figure}
+
+Dịch vụ chat là nơi dễ thấy nhất luồng sinh ngôn ngữ dựa trên nhà cung cấp. \url{travel_chatbot_service.py} có lời gọi REST Gemini, thử dự phòng giữa các mô hình, tùy chọn grounding bằng Google Search và phương án dự phòng OpenAI cũ. Luồng thực tế phụ thuộc vào khóa, mạng, phản hồi nhà cung cấp và chế độ yêu cầu. Siêu dữ liệu grounding có thể chứa truy vấn web và URL nguồn. Cần xem đây là các tích hợp có điều kiện: bản thân kho mã không chứng minh rằng thông tin xác thực đã được khai báo hoặc lời gọi bên ngoài sẽ thành công trong môi trường triển khai.
+
+Trợ giúp tìm kiếm chatbot và công cụ tìm kiếm cho lịch trình không thể thay thế lẫn nhau. Luồng chatbot dùng đặc trưng trích xuất từ hội thoại và giới hạn số kết quả phù hợp câu trả lời chat. Luồng lập lịch nhận tham số đã chuẩn hóa tường minh rồi tìm ứng viên trong \url{osm_attractions_staging}. Câu hỏi được chatbot trả lời không tự động được lưu thành kế hoạch du lịch.
+
+\section{Luồng tạo bản nháp lịch trình}
+
+API lịch trình cung cấp \url{/api/itinerary/plan-draft} cùng bí danh \url{/api/itinerary/multi-agent/plan-draft}. Controller yêu cầu ngày chọn theo định dạng ISO và có từ khóa tìm kiếm hoặc tọa độ. Nếu chỉ gửi tên khu vực hoặc địa danh mà không có tọa độ, controller trả lỗi đầu vào vì luồng này không geocoding. Khi có tọa độ, vĩ độ và kinh độ phải nằm trong hộp giới hạn Việt Nam; bán kính phải từ 0,1 đến 100 km. Bán kính mặc định cho yêu cầu có tâm tọa độ là 5 km. Yêu cầu cũng nhận danh mục, sở thích, nội dung ngân sách và số điểm dừng tối đa.
+
+Sau khi chuẩn hóa đầu vào, controller gọi \url{orchestrate_draft_itinerary()} với \code{execute\_api=False} và tối đa hai lần thử lại. Trình tự gồm xác thực ngày, cặp tọa độ, bán kính, giới hạn kết quả và số điểm dừng; truy vấn staging; trả trạng thái không tìm thấy nếu không có POI; tạo bản nháp; kiểm tra bản nháp theo danh sách ứng viên gốc, địa lý và thời gian; thử lại nếu còn lỗi nghiêm trọng; rồi trả lịch trình cùng báo cáo xác thực, các chặng, cảnh báo, số ứng viên và số vòng lặp. Chỉ cảnh báo không kích hoạt thử lại. Kết quả từ endpoint được đánh dấu là chưa lưu.
+
+Hình~\ref{fig:itinerary_draft_pipeline} mô tả luồng bản nháp bằng các mô-đun tuần tự. Lỗi xác thực có thể kích hoạt thử lại; riêng cảnh báo thì không. Endpoint trả bản nháp nhưng chưa lưu.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        planbox/.style={draw=black, fill=black!4, rounded corners=2pt,
+            align=center, text width=3.2cm, minimum height=2.05cm,
+            inner sep=1.5mm, font=\small},
+        planflow/.style={-{Stealth[length=2mm]}, thick, draw=black},
+        retryflow/.style={-{Stealth[length=2mm]}, thick, dashed, draw=black},
+        node distance=4mm
+    ]
+        \node[planbox] (request) {Yêu cầu đã chuẩn hóa\\ngày, truy vấn, tọa độ, giới hạn};
+        \node[planbox, right=of request] (retrieve) {Kiểm tra đầu vào\\truy vấn PostgreSQL staging\\không có POI thì trả not-found};
+        \node[planbox, right=of retrieve] (planner) {Bộ lập lịch xác định\\khung giờ cố định\\tắt API bên ngoài};
+        \node[planbox, right=of planner] (validator) {Bộ xác thực bằng mã\\mã POI, địa lý, thời gian\\lỗi và cảnh báo};
+        \draw[planflow] (request) -- (retrieve);
+        \draw[planflow] (retrieve) -- (planner);
+        \draw[planflow] (planner) -- (validator);
+        \draw[retryflow] (validator.south) -- ++(0,-12mm) -| (planner.south);
+        \node[font=\scriptsize, fill=white, inner sep=1pt, align=center]
+            at ($(planner.south)!0.5!(validator.south)+(0,-13mm)$)
+            {Chỉ thử lại khi có lỗi nghiêm trọng\\tối đa hai lần};
+    \end{tikzpicture}
+    \caption{Điều phối tạo bản nháp lịch trình và phản hồi xác thực}
+    \label{fig:itinerary_draft_pipeline}
+\end{figure}
+
+Bộ lập lịch mặc định chia ứng viên thành nhóm ăn uống và nhóm khác, sau đó phân vào chuỗi khung giờ cố định bắt đầu lúc 08:30, 10:30, 12:30, 14:45 và 18:00. Thời lượng mỗi lượt từ 90 đến 120 phút. Theo nhãn khung giờ, bộ lập lịch cố gắng xen kẽ ăn uống và tham quan, tránh dùng trùng \code{osm\_id}, đồng thời giới hạn số điểm theo yêu cầu và số ứng viên hiện có. Đây là heuristic cơ sở, không chứng minh lịch trình tối ưu toàn cục hoặc cá nhân hóa.
+
+Bộ tạo prompt và nhánh Gemini tùy chọn có trong \code{planner\_agent.py}; nhánh này yêu cầu JSON có cấu trúc và cấu hình nhiệt độ thấp. Tuy nhiên, endpoint truyền \code{execute\_api=False}, nên đường đi API mặc định dùng \code{deterministic\_planner\_v1} bất kể có khóa Gemini hay không. Các vai trò trong điều phối là mô-đun phần mềm tuần tự có đầu vào và đầu ra, không phải một tập tác tử tự trị chạy đồng thời. Cách tổ chức này giúp kiểm tra riêng từng bước và từ chối mã OSM ngoài tập ứng viên, nhưng heuristic không học từ phản hồi người dùng và bộ xác thực chỉ kiểm tra những quy tắc đã mã hóa.
+
+\section{Xác thực và ước lượng tuyến đường}
+
+Bộ xác thực tách lỗi chặn bản nháp khỏi cảnh báo. Hàm kiểm tra mỗi điểm dừng có mã OSM thuộc tập ứng viên và không lặp điểm. Tọa độ phải là số, nằm trong cùng giới hạn Việt Nam rộng được bộ lập lịch sử dụng. Hàm kiểm tra định dạng giờ \code{HH:MM}, yêu cầu giờ kết thúc sau giờ bắt đầu, đối chiếu thời lượng khai báo với khoảng thời gian, loại các lượt chồng lấn và giới hạn tổng khoảng thời gian trong ngày là 12 giờ.
+
+Kiểm tra giờ mở cửa chỉ thực hiện khi có thể. Khoảng giờ đơn giản được đối chiếu với khoảng ghé thăm. Giá trị bị thiếu hoặc giá trị phức tạp mà bộ phân tích đơn giản không đọc được tạo cảnh báo để kiểm tra thủ công. Bộ xác thực không tuyên bố phân tích đầy đủ ngữ pháp opening-hours của OSM.
+
+Trợ giúp định tuyến tính khoảng cách Haversine giữa hai điểm liên tiếp rồi nhân với 1,3. Kết quả được gắn nhãn ước tính, còn \code{travel\_time\_minutes} là null. Hàm đọc token Mapbox từ môi trường có tồn tại, nhưng tuyến lập lịch được khảo sát không gọi mạng tới Mapbox hoặc OSRM. Khi không có thời lượng lái xe thật, hệ thống thông báo chưa xác định được khoảng thời gian di chuyển thay vì trình bày ước lượng như thời lượng tuyến đường. Khoảng cách gần đúng chỉ là chỉ báo thô về độ tách biệt địa lý.
+
+Các bước kiểm tra không áp đặt ngân sách được yêu cầu dù yêu cầu có thể mang giá trị này. Hệ thống cũng không tối ưu thứ tự dừng theo mạng đường, tính giờ mở cửa theo lịch tuần, xét lịch giao thông công cộng hay xác thực thời tiết và sự kiện. Đây là giới hạn phạm vi, không phải kiểm thử thất bại.
+
+\section{Cấu hình mô hình và nhà cung cấp}
+
+Dự án có cấu hình nhà cung cấp riêng cho câu trả lời hội thoại và bộ lập lịch. Bảng~\ref{tab:model_configuration} tóm tắt các điểm cấu hình nhìn thấy trong mã nguồn. Thông tin xác thực được đọc từ biến môi trường và không được sao chép vào báo cáo.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Cấu hình nhà cung cấp và cơ sở dữ liệu thể hiện trong mã nguồn}
+    \label{tab:model_configuration}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.7cm} >{\raggedright\arraybackslash}p{4.0cm} X}
+        \toprule
+        \textbf{Khu vực} & \textbf{Cấu hình} & \textbf{Hành vi quan sát được} \\
+        \midrule
+        Trả lời chat & \url{GEMINI_API_KEYS}, \url{GEMINI_API_KEY}, \url{GEMINI_MODEL} & REST Gemini thử một nhóm mô hình; có thể grounding Google Search nếu được yêu cầu và hỗ trợ. \\
+        Dự phòng chat & \url{OPENAI_API_KEY} & Dịch vụ chat du lịch có lời gọi OpenAI cũ làm phương án dự phòng. \\
+        Bộ lập lịch nháp & \url{GEMINI_API_KEYS}, \url{GEMINI_MODEL} & Có nhánh SDK Gemini nhưng endpoint HTTP tạo nháp tắt thực thi API bên ngoài. \\
+        Định tuyến bản đồ & \code{MAPBOX\_ACCESS\_TOKEN} hoặc \code{MAPBOX\_TOKEN} & Có hàm lấy token; tuyến lịch trình hiện trả ước lượng Haversine. \\
+        Cơ sở dữ liệu & \url{DATABASE_POSTGRESQL_URL} & SQLAlchemy dùng PostgreSQL khi có URL cơ sở dữ liệu. \\
+        Email & \code{MAIL\_SERVER}, \code{MAIL\_PORT}, TLS và cấu hình tài khoản & Flask-Mail gửi OTP và email nhắc lịch nếu cấu hình SMTP khả dụng. \\
+        Xác thực & \url{SECRET_KEY} & Dùng để ký và xác minh JWT của ứng dụng. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Bộ lập lịch Gemini tùy chọn yêu cầu JSON có cấu trúc và dùng nhiệt độ 0,2. Chuỗi mô hình mặc định là \code{gemini-3-flash-preview}, nhưng bên gọi có thể ghi đè bằng cấu hình. Nếu SDK hoặc lời gọi nhà cung cấp thất bại, bộ lập lịch quay về hàm xác định. Tuyến HTTP mặc định tránh phụ thuộc này vì không bật nhánh API.
+
+Dịch vụ tìm kiếm du lịch tạo yêu cầu REST tới các mô hình Gemini với nhiệt độ và giới hạn token đầu ra đã cấu hình, thử lại qua danh sách mô hình và có thể yêu cầu công cụ Google Search khi sinh nội dung không phải JSON. Nếu tuyến Gemini không khả dụng, dịch vụ có thể dùng lời gọi OpenAI cũ. Các cấu hình này không thiết lập việc tạo lịch trình vì endpoint bộ lập lịch mặc định chủ động chạy ngoại tuyến.
+
+\section{Lưu trữ, tài khoản và dịch vụ hỗ trợ}
+
+Tạo bản nháp và lưu trữ là hai thao tác riêng. Tuyến tạo nháp trả đối tượng trong bộ nhớ và gắn \code{is\_saved=False}. Endpoint xác nhận có tại \nolinkurl{/api/itinerary/confirm} và \nolinkurl{/api/itinerary/multi-agent/confirm}. Endpoint yêu cầu \code{draft\_id}, ngày chọn và danh sách mục không rỗng, sau đó lấy danh tính tài khoản từ JWT Bearer thay vì tin mã người dùng trong thân yêu cầu. Máy chủ xác minh chữ ký và hạn token, tra người dùng rồi từ chối tài khoản chưa xác thực email. Dịch vụ xác nhận kiểm tra yêu cầu theo dữ liệu staging và ghi lịch ứng dụng qua mô hình quan hệ.
+
+Các endpoint tài khoản gồm đăng ký, xác minh email bằng mã một lần, đăng nhập, các bước đặt lại mật khẩu và đổi tên người dùng. Mô hình người dùng lưu mã băm mật khẩu thay vì mật khẩu thuần. Mô hình chat lưu hội thoại và tin nhắn; thực thể lịch trình liên kết người dùng, ngày đi và các lượt ghé attraction có thứ tự. Namespace thông báo hỗ trợ truy vấn, đánh dấu đã đọc và xóa.
+
+Application factory gọi \code{db.create\_all()} trong app context, nhưng bắt lỗi kết nối và ghi cảnh báo. Kho cũng có migration SQL cho bảng staging OSM và thông báo. Cách kết hợp này hỗ trợ phát triển cục bộ, nhưng không thay thế framework migration có phiên bản cho mọi thay đổi mô hình; triển khai cần áp dụng và xác minh migration tường minh.
+
+Bộ lập lịch trong \code{scheduler\_service.py} được khởi chạy khi chạy \code{main.py}. Theo chu kỳ, nó kiểm tra lịch trình sắp tới rồi gọi dịch vụ email. Điểm vào phát triển bật Flask debug và chỉ bind vào localhost, phù hợp cho phát triển cục bộ nhưng cần thay đổi khi triển khai sản xuất. Docker Compose cung cấp container phát triển tương thích PostgreSQL dùng image pgvector, tuy nhiên luồng lập lịch ở đây dùng cột quan hệ, không cần thao tác phần mở rộng vector.
+
+\section{Bảo mật và vận hành}
+
+Dự án đọc thông tin kết nối cơ sở dữ liệu, thư, mô hình, bản đồ và khóa ký từ cấu hình môi trường. Báo cáo không để lộ giá trị trong tệp \code{.env} cục bộ. Khi triển khai cần giữ tệp môi trường ngoài quản lý mã nguồn, xoay vòng thông tin xác thực đã bị lộ, dùng khóa ký mạnh và giới hạn quyền truy cập cơ sở dữ liệu. Tích hợp HTTP với nhà cung cấp kéo theo chi phí, giới hạn tốc độ, tính sẵn sàng và việc truyền dữ liệu. Câu hỏi người dùng có thể chứa ngữ cảnh cá nhân; cần công khai và giảm thiểu lời gọi nhà cung cấp theo yêu cầu riêng tư của nơi triển khai.
+
+Luồng xác nhận có ranh giới danh tính hữu ích: máy chủ suy ra người dùng từ token đã ký, không chấp nhận \code{user\_id} trong JSON làm căn cứ. Dù vậy, cần đánh giá riêng hạn dùng, giới hạn tốc độ, chống dò đoán và truyền tải an toàn đối với token, OTP, đăng ký và đặt lại mật khẩu trước khi mở dịch vụ công khai. Trạng thái kết nối cơ sở dữ liệu, migration, nhà cung cấp và SMTP nên được theo dõi bằng log có cấu trúc, không ghi bí mật hoặc nội dung cá nhân không cần thiết.
+
+SQLAlchemy dùng tham số cho giá trị truy vấn lịch trình. Migration staging khai báo ràng buộc duy nhất trên \code{osm\_id} và chỉ mục cho tọa độ, danh mục, lớp đối tượng, lớp nguồn và trạng thái nhập. Các cấu trúc này hỗ trợ truy xuất và nhập lặp an toàn. Hiệu năng quy mô lớn chưa được đo trong bản chụp kho; cần kiểm thử với cơ sở dữ liệu được cấp phát và ghi lại phần cứng cùng cấu hình.
+
+\section{Cấu hình phát triển}
+
+Thiết lập cục bộ được kho mã mô tả gồm tạo môi trường ảo Python, cài \code{requirements.txt}, khởi chạy cơ sở dữ liệu phát triển bằng \code{docker compose -f docker-compose.dev.yml up -d}, khai báo biến môi trường cần thiết, áp dụng migration SQL phù hợp, nhập POI với cờ \code{--apply} tường minh rồi chạy \code{python main.py}. Giao diện phát triển ở đường dẫn gốc và tài liệu Swagger tại \code{/docs}.
+
+Do bộ nhập mặc định chạy thử và endpoint tạo nháp mặc định hoạt động xác định, ngoại tuyến, có thể phát triển luồng xử lý tập dữ liệu và lập lịch cốt lõi mà không cần gọi API mô hình. Chức năng dựa trên cơ sở dữ liệu vẫn cần PostgreSQL truy cập được và có bảng staging. Sinh câu trả lời chatbot tùy chọn, SMTP và dịch vụ bản đồ cần thông tin xác thực cùng quyền truy cập mạng tương ứng.

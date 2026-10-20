@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VietTravel</title>
+    <meta name="description" content="Tìm địa điểm và lên lịch trình du lịch Việt Nam.">
+    
+    <!-- Google Fonts: Outfit & Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-mark">
+                        <img src="/static/img/logo.jpg" alt="VietTravel AI Logo" class="logo-img">
+                    </div>
+                    <div class="logo-text">
+                        <div class="logo-title-row">
+                            <span class="logo-title">VietTravel</span>
+                            <span class="logo-badge">AI</span>
+                        </div>
+                        <span class="logo-tagline">Du lịch thông minh</span>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="nav-menu">
+                <button class="nav-item active" data-tab="chat-tab" id="nav-chat-btn">
+                    <i class="fa-solid fa-comments"></i>
+                    <span>Trò chuyện</span>
+                </button>
+                <button class="nav-item" data-tab="explore-tab" id="nav-explore-btn" style="display: none;">
+                    <i class="fa-solid fa-map-location-dot"></i>
+                    <span>Địa điểm</span>
+                </button>
+                <button class="nav-item" data-tab="itinerary-tab" id="nav-itinerary-btn">
+                    <i class="fa-solid fa-calendar-check"></i>
+                    <span>Lịch trình</span>
+                    <span class="itinerary-counter" id="itinerary-count">0</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <button class="theme-toggle" id="theme-toggle-btn" title="Đổi giao diện">
+                    <i class="fa-solid fa-moon dark-icon"></i>
+                    <i class="fa-solid fa-sun light-icon"></i>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <h1 class="page-title" id="current-tab-title">Trò chuyện</h1>
+                    <p class="page-subtitle" id="current-tab-subtitle">Tìm địa điểm, trò chuyện, lập lịch.</p>
+                </div>
+                <div class="topbar-actions">
+                    <span id="auth-user-label" class="auth-user-label">Khách</span>
+                    <button type="button" id="auth-open-btn" class="btn-secondary btn-sm">Đăng nhập</button>
+                    <button type="button" id="auth-logout-btn" class="btn-secondary btn-sm" hidden>Đăng xuất</button>
+                </div>
+            </header>
+
+            <!-- TAB 1: AI CHAT -->
+            <section class="tab-pane active" id="chat-tab">
+                <div class="chat-container">
+                    <div class="chat-messages" id="chat-messages-container">
+                        <!-- Hero Welcome Screen -->
+                        <div class="chat-welcome-hero" id="chat-welcome-hero">
+                            <h2 class="hero-greeting">
+                                Khám phá Việt Nam cùng <span class="gradient-brand-text">VietTravel AI</span>
+                            </h2>
+                            <p class="hero-description">
+                                Lên kế hoạch du lịch thông minh, tìm kiếm điểm đến và khám phá văn hóa ẩm thực Việt Nam.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Input Bar -->
+                    <div class="chat-input-area">
+                        <div class="chat-input-toolbar">
+                            <label class="web-search-toggle" title="Tra cứu thông tin mới nhất trên Google">
+                                <input type="checkbox" id="web-search-checkbox" checked>
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label"><i class="fa-solid fa-globe"></i> Tra cứu Web</span>
+                            </label>
+                        </div>
+                        <form id="chat-form" class="chat-input-wrapper">
+                            <div class="input-actions-left">
+                                <i class="fa-solid fa-wand-magic-sparkles magic-icon"></i>
+                            </div>
+                            <input 
+                                type="text" 
+                                id="user-input" 
+                                class="chat-input" 
+                                placeholder="Hỏi về địa điểm hoặc lịch trình..." 
+                                autocomplete="off"
+                            >
+                            <button type="submit" id="send-btn" class="send-button" title="Gửi câu hỏi">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: EXPLORE ATTRACTIONS -->
+            <section class="tab-pane" id="explore-tab">
+                <div class="explore-toolbar">
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="explore-search-input" placeholder="Tìm kiếm theo tên địa điểm, từ khóa, địa chỉ...">
+                    </div>
+                    
+                    <div class="filters-row">
+                        <div class="filter-group">
+                            <label><i class="fa-solid fa-map-pin"></i> Khu vực:</label>
+                            <select id="district-filter" class="filter-select">
+                                <option value="">Tất cả khu vực</option>
+                                <option value="Quận 1">Quận 1</option>
+                                <option value="Quận 2">Quận 2</option>
+                                <option value="Quận 3">Quận 3</option>
+                                <option value="Quận 5">Quận 5</option>
+                                <option value="Quận 7">Quận 7</option>
+                                <option value="TP.Thủ Đức">TP. Thủ Đức</option>
+                                <option value="Bình Thạnh">Bình Thạnh</option>
+                                <option value="Phú Nhuận">Phú Nhuận</option>
+                                <option value="Tân Bình">Tân Bình</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label><i class="fa-solid fa-tags"></i> Phân loại:</label>
+                            <select id="category-filter" class="filter-select">
+                                <option value="">Tất cả loại hình</option>
+                                <option value="Bảo tàng">Bảo tàng</option>
+                                <option value="Di tích">Di tích lịch sử</option>
+                                <option value="Công viên">Công viên</option>
+                                <option value="Chợ">Chợ truyền thống</option>
+                                <option value="Trung tâm thương mại">Trung tâm thương mại</option>
+                                <option value="Nhà thờ">Tôn giáo / Chùa / Nhà thờ</option>
+                                <option value="Ẩm thực">Ẩm thực / Nhà hàng</option>
+                                <option value="Phố đi bộ">Phố đi bộ / Giải trí</option>
+                            </select>
+                        </div>
+
+                        <button id="reset-filter-btn" class="btn-secondary">
+                            <i class="fa-solid fa-rotate-left"></i> Đặt lại
+                        </button>
+                    </div>
+                </div>
+
+                <div class="explore-stats-bar">
+                    <span id="places-count-text">Đang tải địa điểm...</span>
+                    <div class="pagination-controls">
+                        <button id="prev-page-btn" class="page-btn" disabled><i class="fa-solid fa-chevron-left"></i></button>
+                        <span id="page-indicator">Trang 1</span>
+                        <button id="next-page-btn" class="page-btn"><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+
+                <div class="attractions-grid" id="attractions-grid">
+                    <!-- Cards will be populated by JS -->
+                </div>
+            </section>
+
+            <!-- TAB 3: ITINERARY PLANNER -->
+            <section class="tab-pane" id="itinerary-tab">
+                <div class="itinerary-wrapper">
+                    <!-- AI Draft Itinerary Generator Form -->
+                    <div class="planner-form-card">
+                        <div class="planner-form-header">
+                            <div class="planner-title">
+                                <h3>Lập lịch đa tác tử</h3>
+                            </div>
+                        </div>
+                        <form id="plan-draft-form">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="draft-date">Ngày đi</label>
+                                    <input type="date" id="draft-date" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="draft-area">Khu vực</label>
+                                    <input type="text" id="draft-area" class="form-control" placeholder="Ví dụ: Hoàn Kiếm, Quận 1..." required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="draft-query">Từ khóa</label>
+                                    <input type="text" id="draft-query" class="form-control" placeholder="Ví dụ: Cà phê, Bảo tàng, Ẩm thực...">
+                                </div>
+                                <div class="form-group">
+                                    <label for="draft-latitude">Vĩ độ</label>
+                                    <input type="number" id="draft-latitude" class="form-control" min="8" max="24" step="any" placeholder="Ví dụ: 21.0285">
+                                </div>
+                                <div class="form-group">
+                                    <label for="draft-longitude">Kinh độ</label>
+                                    <input type="number" id="draft-longitude" class="form-control" min="102" max="110" step="any" placeholder="Ví dụ: 105.8542">
+                                </div>
+                                <div class="form-group">
+                                    <label for="draft-radius">Bán kính (km)</label>
+                                    <input type="number" id="draft-radius" class="form-control" min="0.1" max="100" step="0.1" value="5">
+                                </div>
+                                <div class="form-group">
+                                    <label for="draft-max-stops">Số điểm dừng</label>
+                                    <select id="draft-max-stops" class="form-control">
+                                        <option value="2">2 điểm</option>
+                                        <option value="3" selected>3 điểm</option>
+                                        <option value="4">4 điểm</option>
+                                        <option value="5">5 điểm</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <p class="form-hint" style="margin-top: 8px; color: var(--text-muted); font-size: 0.9rem;">
+                                Nhập đủ vĩ độ và kinh độ để lọc đúng khu vực.
+                            </p>
+                            <div class="form-group" style="margin-top: 12px;">
+                                <label for="draft-preferences">Sở thích (tùy chọn)</label>
+                                <input type="text" id="draft-preferences" class="form-control" placeholder="Ẩm thực, yên tĩnh, ngoài trời...">
+                            </div>
+                            <div class="form-actions" style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 12px;">
+                                <button type="submit" id="btn-submit-draft" class="btn-primary">
+                                    Tạo lịch trình
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- AI Draft Itinerary Display Section -->
+                    <div id="draft-result-section" class="draft-result-section" style="display: none;">
+                        <div id="draft-loading" class="draft-loading" style="display: none;">
+                            <p>Đang tạo lịch trình...</p>
+                        </div>
+
+                        <div id="draft-alert" class="draft-alert" style="display: none;">
+                            <!-- Alert message populated by JS -->
+                        </div>
+
+                        <div id="draft-content" class="draft-content" style="display: none;">
+                            <!-- Draft Header Banner -->
+                            <div class="draft-banner">
+                                <div class="draft-banner-info">
+                                    <div class="draft-banner-title">
+                                        <h3 id="draft-display-title">Lịch trình</h3>
+                                        <span class="badge badge-warning" id="draft-saved-badge">
+                                            Chưa lưu
+                                        </span>
+                                    </div>
+                                    <p class="draft-meta-text">
+                                        Ngày đi: <strong id="draft-date-text"></strong>
+                                    </p>
+                                </div>
+                                <div class="draft-summary-pills">
+                                    <div class="summary-pill">
+                                        <i class="fa-solid fa-map-marker-alt"></i>
+                                        <span id="draft-stops-count">0 điểm</span>
+                                    </div>
+                                    <div class="summary-pill">
+                                        <i class="fa-regular fa-clock"></i>
+                                        <span id="draft-time-span">0 giờ</span>
+                                    </div>
+                                    <div class="summary-pill">
+                                        <i class="fa-solid fa-route"></i>
+                                        <span id="draft-distance-total">0 km (ước tính)</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Warnings container if any -->
+                            <div id="draft-warnings-container" class="draft-warnings-box" style="display: none;">
+                                <div class="warning-title">
+                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                    <strong>Lưu ý</strong>
+                                </div>
+                                <ul id="draft-warnings-list"></ul>
+                            </div>
+
+                            <!-- Draft Timeline -->
+                            <div class="draft-timeline-wrapper">
+                                <h4 style="margin-bottom: 14px; font-size: 16px;">Các điểm dừng</h4>
+                                <div id="draft-items-timeline" class="draft-items-timeline">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
+
+                            <!-- Confirm & Action Bar -->
+                            <div class="draft-actions-bar">
+                                <div class="draft-action-buttons">
+                                    <button type="button" id="btn-discard-draft" class="btn-secondary">
+                                        Bỏ bản nháp
+                                    </button>
+                                    <button type="button" id="btn-confirm-draft" class="btn-primary btn-confirm-glow">
+                                        Xác nhận và lưu
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="confirm-status-alert" class="confirm-status-alert" style="display: none;">
+                                <!-- Confirm status message -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Local Selected Places Section -->
+                    <div class="saved-places-section" style="margin-top: 36px;">
+                        <div class="saved-places-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <h3 style="font-size: 17px;">Địa điểm đã chọn</h3>
+                            <button class="btn-secondary btn-sm" id="clear-itinerary-btn">
+                                Xóa danh sách
+                            </button>
+                        </div>
+
+                        <div id="itinerary-empty-state" class="empty-state">
+                            <h3>Chưa có địa điểm</h3>
+                        </div>
+
+                        <div class="itinerary-timeline" id="itinerary-timeline" style="display: none;">
+                            <!-- Timeline items populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Location Detail Modal -->
+    <div class="modal-overlay" id="detail-modal">
+        <div class="modal-card">
+            <button class="modal-close-btn" id="modal-close-btn">&times;</button>
+            <div class="modal-header">
+                <span class="badge" id="modal-category">Loại hình</span>
+                <span class="badge badge-district" id="modal-district">Khu vực</span>
+                <h2 id="modal-title">Tên địa điểm</h2>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc" id="modal-desc">Mô tả chi tiết</p>
+                <div class="modal-info-list">
+                    <div class="info-row">
+                        <i class="fa-solid fa-location-dot"></i>
+                        <div>
+                            <strong>Địa chỉ:</strong>
+                            <span id="modal-address">...</span>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <i class="fa-regular fa-clock"></i>
+                        <div>
+                            <strong>Giờ hoạt động:</strong>
+                            <span id="modal-hours">...</span>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <i class="fa-solid fa-ticket"></i>
+                        <div>
+                            <strong>Giá vé:</strong>
+                            <span id="modal-price">...</span>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <i class="fa-solid fa-star" style="color: #f59e0b;"></i>
+                        <div>
+                            <strong>Đánh giá:</strong>
+                            <span id="modal-rating">...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; align-items: center;">
+                <a id="modal-maps-link" class="btn-secondary" href="#" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
+                    <i class="fa-solid fa-map-location-dot"></i> Mở trên Google Maps
+                </a>
+                <button class="btn-primary" id="modal-add-itinerary-btn">
+                    <i class="fa-solid fa-plus"></i> Thêm vào lịch trình
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login is required only when saving a draft; draft generation remains available to guests. -->
+    <div class="modal-overlay" id="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+        <form class="modal-card auth-card" id="auth-form">
+            <button type="button" class="modal-close-btn" id="auth-close-btn" aria-label="Đóng">&times;</button>
+            <div class="modal-header">
+                <h2 id="auth-modal-title">Đăng nhập</h2>
+            </div>
+            <p class="modal-desc">Đăng nhập để lưu lịch trình vào tài khoản.</p>
+            <div id="auth-error" class="alert-box alert-error" role="alert" hidden></div>
+            <div class="form-group">
+                <label for="auth-email">Email</label>
+                <input id="auth-email" class="form-control" type="email" autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label for="auth-password">Mật khẩu</label>
+                <input id="auth-password" class="form-control" type="password" autocomplete="current-password" required>
+            </div>
+            <div class="modal-footer auth-actions">
+                <button type="button" id="auth-cancel-btn" class="btn-secondary">Đóng</button>
+                <button type="submit" id="auth-submit-btn" class="btn-primary">Đăng nhập</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Custom JS -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

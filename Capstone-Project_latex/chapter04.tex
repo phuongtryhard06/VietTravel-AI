@@ -1,0 +1,186 @@
+\chapter{Model Configuration}
+\label{chap:model_configuration}
+
+\section{Application Architecture}
+
+The application is a single Flask service with a browser client and REST API. \code{main.py} loads environment variables, constructs the application with \code{create\_app()}, starts the itinerary reminder scheduler, and runs the development server on \code{127.0.0.1:5000}. The application factory initializes Flask-CORS, Flask-Mail, SQLAlchemy, and Flask-RESTX, serves the \code{index.html} page at the root path, and registers namespaces for authentication, chat, travel search, itinerary, map, notifications, and legacy location-data operations. Interactive API documentation is exposed at \code{/docs}.
+
+Figure~\ref{fig:implemented_architecture} shows the high-level connections supported by the inspected source. It deliberately separates the language-model travel-search path from the deterministic itinerary path.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        node distance=8mm and 10mm,
+        box/.style={draw=SamsungBlue, rounded corners=2pt, fill=SamsungLightBlue!45,
+            align=center, text width=4.1cm, minimum width=4.1cm, minimum height=9mm, font=\small},
+        store/.style={draw=SamsungDarkBlue, rounded corners=2pt, fill=white,
+            align=center, text width=4.1cm, minimum width=4.1cm, minimum height=9mm, font=\small},
+        flow/.style={-{Stealth[length=2mm]}, thick, draw=SamsungDarkGray}
+    ]
+        \node[box] (client) {Browser / REST client};
+        \node[box, below=of client] (api) {Flask REST API};
+        \node[box, below left=of api] (chat) {Travel chatbot\\language, features, grounded answer};
+        \node[box, below right=of api] (plan) {Itinerary planner\\search, plan, validate};
+        \node[store, below=of chat] (llm) {Gemini / OpenAI APIs\\optional external calls};
+        \node[store, below=of plan] (db) {PostgreSQL\\OSM staging and application tables};
+        \node[box, below=of db] (confirm) {JWT-protected\\confirmation and save};
+        \coordinate (confirmroute) at ([xshift=8mm]confirm.east);
+        \draw[flow] (client) -- (api);
+        \draw[flow] (api) -- (chat);
+        \draw[flow] (api) -- (plan);
+        \draw[flow] (chat) -- (llm);
+        \draw[flow] (plan) -- (db);
+        \draw[flow] (confirm) -- (db);
+        \draw[flow] (client.east) -- (confirmroute |- client.east)
+            -- (confirmroute |- confirm.east) -- (confirm.east);
+    \end{tikzpicture}
+    \caption{Implemented application paths and external dependencies}
+    \label{fig:implemented_architecture}
+\end{figure}
+
+The browser client is implemented in HTML, CSS, and JavaScript under \url{src/templates} and \url{src/static}. It communicates with API endpoints for questions, place results, accounts, and itinerary operations. The controllers translate HTTP requests into service calls; services contain provider, search, authentication, notification, and planning logic; models map relational data to SQLAlchemy objects. This layered organization makes the core request paths identifiable, although the repository also contains legacy modules that coexist with newer itinerary components.
+
+\Needspace{22\baselineskip}
+\section{Natural-Language Travel Search}
+
+The \url{/api/travel-chatbot/search} endpoint accepts a question and an optional \code{enable\_web\_search} flag. The controller then:
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+    \item It rejects a request without a question and calls language-detection logic.
+    \item The service extracts an intent and structured features from the question. The source contains provider-backed extraction and fallback behavior, as well as rule-based feature handling.
+    \item The search service queries PostgreSQL staging for up to six place results using the extracted feature set.
+    \item A response-generation function receives the original question, retrieved records, extracted features, detected language, and optional web-search setting.
+    \item The controller returns a structured response that can include the answer, language, POI results, suggested activities, follow-up questions, and extracted features.
+\end{enumerate}
+
+Figure~\ref{fig:chat_search_pipeline} summarizes the implemented chatbot search path. Google Search grounding is an optional provider feature; the diagram does not imply that an external search runs for every request.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        chatbox/.style={draw=black, fill=black!4, rounded corners=2pt,
+            align=center, text width=3.2cm, minimum height=2.05cm,
+            inner sep=1.5mm, font=\small},
+        chatflow/.style={-{Stealth[length=2mm]}, thick, draw=black},
+        node distance=4mm
+    ]
+        \node[chatbox] (question) {User question\\optional web-search flag};
+        \node[chatbox, right=of question] (features) {Language detection\\intent and feature extraction};
+        \node[chatbox, right=of features] (search) {PostgreSQL place search\\up to six matching POIs};
+        \node[chatbox, right=of search] (answer) {Answer generation\\Gemini; optional Google Search grounding\\provider fallback may apply};
+        \draw[chatflow] (question) -- (features);
+        \draw[chatflow] (features) -- (search);
+        \draw[chatflow] (search) -- (answer);
+    \end{tikzpicture}
+    \caption{Natural-language travel-search path and its conditional grounding step}
+    \label{fig:chat_search_pipeline}
+\end{figure}
+
+The chat service is the path where current provider-based language generation is most visible. \url{travel_chatbot_service.py} includes a Gemini REST call, model fallback attempts, optional Google Search grounding, and a legacy OpenAI fallback. The exact path depends on keys, network access, provider responses, and the requested mode. The returned grounding metadata can include web queries and source URLs. These features should be described as conditional integrations: the repository alone does not show that credentials are set or prove that an external request succeeds in a deployed environment.
+
+The chatbot search helper and the itinerary search tool are not interchangeable. The former uses extracted chat features and a search limit oriented to conversational responses. The latter takes explicit normalized itinerary parameters and searches \url{osm_attractions_staging} for planner candidates. A question answered by the chat function is not automatically stored as a travel plan.
+
+\section{Itinerary Draft Workflow}
+
+The itinerary API exposes both \url{/api/itinerary/plan-draft} and its alias \url{/api/itinerary/multi-agent/plan-draft}. The controller requires an ISO-formatted selected date and either a search term or coordinates. If an area label or location name is supplied without coordinates, the controller returns an input error: the source does not geocode the label in this path. When coordinates are provided, latitude and longitude must fall within a Vietnam bounding box, and the radius must be between 0.1 and 100 km. The default search radius for a coordinate-centered request is 5 km. The request also accepts a category, preferences, budget text, and a requested maximum stop count.
+
+After input normalization, the controller calls \url{orchestrate_draft_itinerary()} with \code{execute\_api=False} and at most two retries. The orchestration sequence is:
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+    \item Validate the request date, coordinate pair, radius, result limit, and stop count.
+    \item Query PostgreSQL staging. If no candidates are found, return a clear not-found state rather than inventing POIs.
+    \item Pass the candidate records to the planner. The default planner partitions candidates into dining-related and other POIs, then assigns selected records to a fixed sequence of day-time slots.
+    \item Validate the draft against the original candidate list and geographic/time rules.
+    \item If hard errors are present, feed them back and repeat, up to the configured retry limit. Warnings alone do not trigger another attempt.
+    \item Return the final draft, validation report, route legs, warnings, candidate count, and iteration count. The API marks the result as unsaved.
+\end{enumerate}
+
+Figure~\ref{fig:itinerary_draft_pipeline} shows the draft route as sequential application logic. Validation errors can trigger a retry; warnings alone do not. The endpoint returns a draft without saving it.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        planbox/.style={draw=black, fill=black!4, rounded corners=2pt,
+            align=center, text width=3.2cm, minimum height=2.05cm,
+            inner sep=1.5mm, font=\small},
+        planflow/.style={-{Stealth[length=2mm]}, thick, draw=black},
+        retryflow/.style={-{Stealth[length=2mm]}, thick, dashed, draw=black},
+        node distance=4mm
+    ]
+        \node[planbox] (request) {Normalized request\\date, query, coordinates, limits};
+        \node[planbox, right=of request] (retrieve) {Validate inputs\\query PostgreSQL staging\\return not-found if empty};
+        \node[planbox, right=of retrieve] (planner) {Deterministic planner\\fixed day-time slots\\external API disabled};
+        \node[planbox, right=of planner] (validator) {Code validator\\POI IDs, geography, time\\errors and warnings};
+        \draw[planflow] (request) -- (retrieve);
+        \draw[planflow] (retrieve) -- (planner);
+        \draw[planflow] (planner) -- (validator);
+        \draw[retryflow] (validator.south) -- ++(0,-12mm) -| (planner.south);
+        \node[font=\scriptsize, fill=white, inner sep=1pt, align=center]
+            at ($(planner.south)!0.5!(validator.south)+(0,-13mm)$)
+            {Retry only for hard errors\\at most two retries};
+    \end{tikzpicture}
+    \caption{Itinerary draft orchestration and validation feedback}
+    \label{fig:itinerary_draft_pipeline}
+\end{figure}
+
+The schedule routine uses a fixed slot template rather than learning an itinerary policy. Its current slots begin at 08:30, 10:30, 12:30, 14:45, and 18:00, with durations from 90 to 120 minutes. It attempts to alternate dining and non-dining candidates according to slot labels, avoids reusing the same \code{osm\_id}, and limits the draft to the requested number of stops and available candidates. These are implementation details of the baseline engine; they are not evidence that the itinerary is globally optimal or personalized to a traveler.
+
+The planner prompt builder and Gemini integration branch are present in \code{planner\_agent.py}. The optional branch requests structured JSON and uses a low-temperature configuration. However, the endpoint supplies \code{execute\_api=False}, so the planner uses \code{deterministic\_planner\_v1} on the default API path, regardless of whether a Gemini key happens to be configured. This distinction is central to interpreting any result from the current endpoint.\section{Validation and Route Estimates}
+
+The validator separates blocking errors from warnings. It verifies that each draft stop references an OSM identifier present in the candidate set and that a stop is not duplicated. It checks that coordinates are numeric and fall inside the same broad Vietnam bounds used by the planner. It checks the \code{HH:MM} time format, requires the end to be after the start, reconciles declared duration with the time interval, and rejects overlapping visits. The total span from the first start to the last finish cannot exceed 12 hours.
+
+Opening-hour validation is deliberately conditional. A simple hour range can be checked against a stop interval. A missing value produces a warning; a complex value that the simple parser cannot interpret also produces a warning for manual review. The validator does not claim to fully parse the OSM opening-hours grammar.
+
+The routing helper computes Haversine distance between consecutive stops and multiplies it by 1.3. Each result is labeled as estimated, while \code{travel\_time\_minutes} is null. The Mapbox token helper reads a token from the environment, but the route function in the inspected implementation does not make a network request to Mapbox or OSRM. When no true drive duration exists, the validator reports that the time gap is undetermined instead of passing an estimate off as a route duration. The approximate distance is useful only as a coarse indication of spatial separation.
+
+The implemented checks do not enforce the requested budget, even though the request can carry a budget value. They also do not optimize the stop order against road travel, calculate opening hours from a weekly calendar, consider transit schedules, or validate weather and event information. Those are current scope limits, not failed tests.
+
+\section{Model and Provider Configuration}
+
+The project has separate model/provider settings for the conversational answer path and the itinerary planner. Table~\ref{tab:model_configuration} summarizes configuration points visible in the source and environment loader. Credentials are read from environment variables; values are intentionally not reproduced in this report.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Provider and database settings visible in the source configuration}
+    \label{tab:model_configuration}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.7cm} >{\raggedright\arraybackslash}p{4.0cm} X}
+        \toprule
+        \textbf{Area} & \textbf{Configuration} & \textbf{Observed behavior} \\
+        \midrule
+        Chat response & \url{GEMINI_API_KEYS}, \url{GEMINI_API_KEY}, \url{GEMINI_MODEL} & Gemini REST integration tries a model pool; optional Google Search grounding is used when requested and supported. \\
+        Chat fallback & \url{OPENAI_API_KEY} & Legacy OpenAI calls are present as a fallback path in the travel chat service. \\
+        Draft planner & \url{GEMINI_API_KEYS}, \url{GEMINI_MODEL} & Gemini SDK branch exists, but the HTTP draft endpoint explicitly disables external API execution. \\
+        Map routing & \code{MAPBOX\_ACCESS\_TOKEN} or \code{MAPBOX\_TOKEN} & Token accessor exists; itinerary routing currently returns a Haversine-based estimate. \\
+        Database & \url{DATABASE_POSTGRESQL_URL} & SQLAlchemy uses PostgreSQL when a database URL is configured. \\
+        Email & \code{MAIL\_SERVER}, \code{MAIL\_PORT}, TLS and account settings & Flask-Mail sends OTP and reminder messages when SMTP configuration is available. \\
+        Authentication & \url{SECRET_KEY} & Used to sign and verify application JWTs. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+The optional Gemini planner uses a structured JSON response request and a temperature of 0.2. Its default model string is \code{gemini-3-flash-preview}, but callers can override it through configuration. If the optional SDK or provider request fails, the planner falls back to the deterministic routine. The default HTTP route avoids this dependency by never enabling the API branch.
+
+The travel-search service uses a different provider implementation. It creates REST requests to Gemini models with a configured temperature and output-token limit, retries through a model list, and can request a Google Search tool for non-JSON generation. It may use a legacy OpenAI call if the Gemini route is unavailable. These settings do not configure itinerary drafting because the planner endpoint is deliberately offline by default.
+
+\section{Persistence, Accounts, and Supporting Services}
+
+Draft creation and persistence are separate operations. The draft route returns an in-memory object and marks \code{is\_saved=False}. The confirmation endpoint is available at \url{/api/itinerary/confirm} and \url{/api/itinerary/multi-agent/confirm}. It requires a \code{draft\_id}, selected date, and non-empty items list, then derives the account identity from the Bearer JWT rather than trusting a user identifier in the request body. It verifies the token signature and expiry, looks up the user, and rejects unverified accounts. The confirmation service validates the request against staging data and commits the application itinerary through the relational model.
+
+The account endpoints include registration, email verification with a one-time code, login, password-reset steps, and username update. The user model stores a password hash rather than a plaintext password. The chat models store conversations and messages; itinerary entities link the user, trip date, and ordered attraction visits. Notifications can be queried, marked read, and deleted through their own namespace.
+
+The application factory calls \code{db.create\_all()} inside an app context, but catches connection errors and logs a warning. The repository also provides SQL migrations for the OSM staging and notifications tables. This combination supports local development, but it does not constitute a versioned migration framework for every model change; deployment procedures should apply and verify migrations explicitly.
+
+The scheduler in \code{scheduler\_service.py} is started when \code{main.py} runs. It periodically checks upcoming itineraries and calls the email service. The development entry point enables Flask debug mode and binds to localhost. That is appropriate for local use but should be changed for production deployment. The Docker Compose file provides a PostgreSQL-compatible development container using the pgvector image, but the itinerary query path described here uses relational columns and does not require vector-extension operations.
+
+\section{Security and Operational Considerations}
+
+The project reads database, mail, model, map, and signing credentials from environment configuration. The report does not expose local \code{.env} values. A deployment should keep the environment file outside source control, rotate any credentials that have been exposed, use a strong signing key, and limit access to the database. HTTP provider integrations introduce cost, rate-limit, availability, and data-transfer considerations. User questions can contain personal context, so provider calls should be disclosed and minimized according to the deployment's privacy requirements.
+
+The confirmation flow has a useful identity boundary: the server derives the user from the signed token and does not accept the request body's \code{user\_id} as authority. Still, token, OTP, registration, and password-reset behavior should be independently reviewed for expiry, rate limiting, brute-force protection, and secure transport before public deployment. Database connection success, migration status, provider availability, and SMTP delivery should be observable with structured logs that exclude secrets and unnecessary personal content.
+
+SQLAlchemy parameters are used for the itinerary search values, and the staging migration declares a unique constraint on \code{osm\_id} plus indexes for coordinates, category, feature class, source layer, and import status. These support expected retrieval and idempotent ingestion patterns. Performance at scale remains unmeasured in the repository snapshot and must be tested against a provisioned database with recorded hardware and configuration.
+
+\section{Development Configuration}
+
+The local setup described by the repository creates a Python virtual environment, installs \code{requirements.txt}, starts the development database with \code{docker compose -f docker-compose.dev.yml up -d}, configures required environment variables, applies the relevant SQL migration, imports the POIs with an explicit \code{--apply} flag, and starts the server with \code{python main.py}. The developer interface is available at the root path and Swagger documentation at \code{/docs}.
+
+Because the importer defaults to dry run and the draft endpoint defaults to deterministic offline execution, the core dataset-processing and itinerary-drafting path can be developed without model-provider API calls. Database-backed behavior still requires a reachable PostgreSQL instance with the staging table available. Optional chatbot generation, SMTP, and map services require their respective credentials and network access.

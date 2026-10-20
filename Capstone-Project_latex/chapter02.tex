@@ -1,0 +1,91 @@
+\chapter{Related Work}
+\label{chap:related_work}
+
+\section{Tourism Recommender Systems}
+
+Tourism recommendation is a context-rich decision-support problem. A traveler chooses combinations of attractions, food, accommodation, and transport under limits on place, date, time, cost, party needs, and personal interest. These decisions differ from a simple item-ranking task because the selected items form a trip: order matters, travel consumes time, and several pieces of information may be uncertain. Surveys of tourism recommenders describe content-based, collaborative, knowledge-based, and context-aware approaches as complementary families rather than a single universal solution \cite{borras2014intelligent,gavalas2014mobile}.
+
+\subsection{Content-based and collaborative filtering}
+
+Content-based filtering ranks items using item attributes that resemble a user's stated or learned preferences. If POIs are represented by feature vectors $\mathbf{x}_i$, and a profile by $\mathbf{u}$, a common similarity is
+\begin{equation}
+    \operatorname{cos}(\mathbf{u},\mathbf{x}_i)
+    = \frac{\mathbf{u}^{\mathsf T}\mathbf{x}_i}
+    {\lVert\mathbf{u}\rVert_2\lVert\mathbf{x}_i\rVert_2}.
+\end{equation}
+This family can recommend a new item if its metadata is available, but its quality depends on descriptive and consistent item features. A sparse OSM record with only a name, class, and coordinate can support category and distance filtering, but it provides little evidence about atmosphere, accessibility, or suitability for a particular traveler. The project therefore has a searchable catalogue, but the inspected implementation does not include a learned user-preference profile or a trained recommendation model.
+
+Collaborative filtering estimates preference from interactions among users and items. In tourism settings, interactions can be sparse because many users visit a destination infrequently, and a new user or new destination may have little history. PersTour is one example: it combines POI popularity with user interests inferred from geo-tagged travel sequences and personalizes visit duration using observed photo-visit behavior \cite{lim2015persontour}. The repository's available ORM model records accounts and itineraries, but the source inspected for this report does not implement a collaborative ranking algorithm or a rating-feedback loop. It would be inaccurate to describe the current system as a trained recommender in the matrix-factorization sense.
+
+\subsection{Context-aware and constraint-based planning}
+
+Context-aware systems use factors such as time, location, weather, group composition, or current activity in addition to item preference \cite{gavalas2014mobile}. A travel itinerary also has hard constraints that are naturally expressed as feasibility checks: stops should not overlap, visits should fit within available hours, and locations should belong to the supported region. These constraints can be enforced independently of a language model.
+
+An itinerary formulation can be written as the selection and ordering of a subset $\mathcal{S}$ of candidate POIs. A generalized objective may reward user relevance while penalizing time and distance:
+\begin{equation}
+    \max_{\mathcal{S},\pi}\;
+    \sum_{i\in\mathcal{S}} u_i
+    - \lambda_d\sum_{j=1}^{|\mathcal{S}|-1} d_{\pi_j,\pi_{j+1}}
+    - \lambda_t\sum_{j=1}^{|\mathcal{S}|} t_{\pi_j},
+\end{equation}
+subject to budget, time-window, and trip-duration constraints. Here $u_i$ is an item utility, $\pi$ is the visit order, $d$ is a distance, and $t$ is a visit duration. This equation describes a useful design space; it is not the optimization objective implemented by the current planner. The current deterministic planner uses a fixed set of day-time slots and a simple dining-versus-sightseeing preference when selecting from the supplied candidate list.
+
+\section{Large Language Models and Retrieval Grounding}
+
+The Transformer architecture uses attention to model dependencies across sequences and underlies many contemporary language models \cite{vaswani2017attention}. Large models can interpret varied wording and generate coherent explanations, which is attractive for conversational interfaces. Few-shot language models further illustrate how prompting can guide task behavior without fitting task-specific model parameters \cite{brown2020language}. Yet a generated answer is not automatically grounded in a current local dataset. A model may confidently state a fact unsupported by the records supplied to it.
+Retrieval-augmented generation combines a learned generator with external evidence retrieved at response time \cite{lewis2020retrieval}. Dense Passage Retrieval demonstrates a dual-encoder approach for retrieving passages from learned vector representations; Sentence-BERT provides a related method for producing sentence embeddings suited to semantic comparison \cite{karpukhin2020dense,reimers2019sentence}. Sparse retrieval such as BM25 provides a complementary lexical signal for exact terms \cite{robertson2009probabilistic}. A hybrid retriever can combine semantic similarity, exact text, structured category filters, and geography, but each component requires an implementation and an evaluation set. A dependency on a vector database alone does not establish that such a hybrid score is being used.
+
+The repository contains dependencies for ChromaDB and Sentence-Transformers, and \url{poi_search_tool.py} includes an optional, read-only Chroma lookup. However, the itinerary orchestrator explicitly calls PostgreSQL search with \code{include\_chromadb=False}. Its primary retrieval path uses SQL text/category filters and, when a center coordinate and radius are supplied, geospatial filtering. The report therefore treats the itinerary flow as structured SQL retrieval, not as a deployed dense-vector RAG pipeline. In the chat path, PostgreSQL results are passed into a language-model response function; optional Google Search grounding is a separate provider capability and depends on configuration and provider availability. Search grounding does not make OSM metadata complete and cannot substitute for a domain-specific evaluation.
+
+\section{Multi-Agent Orchestration}
+
+Multi-agent approaches assign distinct roles to interacting language-model or software agents. Frameworks such as AutoGen and MetaGPT study communication patterns and role specialization for complex tasks \cite{wu2023autogen,hong2023metagpt}. ReAct interleaves reasoning and tool actions \cite{yao2023react}, while Reflexion introduces feedback from evaluating earlier attempts \cite{shinn2023reflexion}. These ideas motivate decomposing a travel workflow into retrieval, planning, routing, and validation responsibilities.
+
+The itinerary workflow runs a sequence of application modules. \url{orchestrator.py} validates the request, searches staging POIs, sends candidates to the planner, checks the draft, and retries when blocking errors remain. The API controller sets \code{execute\_api=False}, so the endpoint uses the deterministic Python planner by default. A direct caller can enable the optional Gemini branch in \url{planner_agent.py} when the SDK and credentials are available; the API does not enable it.
+
+These roles are software modules with explicit inputs and outputs, rather than concurrent autonomous agents. This structure makes each step inspectable: missing search results can be reported, unsupported OSM identifiers can be rejected, and warnings can be returned separately. The planner does not learn from user feedback, and the validator can enforce only rules that have been encoded.
+
+\section{Geospatial Search and Route Planning}
+
+The great-circle distance between two points on a sphere can be calculated with the Haversine formula \cite{sinnott1984virtues}. For latitudes $\phi_1,\phi_2$ and longitudes $\lambda_1,\lambda_2$ expressed in radians,
+\begin{align}
+    a &= \sin^2\left(\frac{\phi_2-\phi_1}{2}\right)
+       + \cos(\phi_1)\cos(\phi_2)
+         \sin^2\left(\frac{\lambda_2-\lambda_1}{2}\right),\\
+    d &= 2R\operatorname{atan2}\left(\sqrt{a},\sqrt{1-a}\right),
+\end{align}
+where $R$ is an Earth-radius constant. This is a useful geographic distance, but it is not a road distance or an estimate of travel time.
+
+The project uses this formula in two related ways. The PostgreSQL search function first applies a latitude/longitude bounding box and then evaluates Haversine distance for exact radius filtering and nearest-first ordering. The routing helper calculates direct point-to-point distance and multiplies it by a fixed factor of 1.3 to label an approximate road distance. It sets travel time to null and returns a warning; the source does not call Mapbox or OSRM for the itinerary route. This explicit uncertainty is preferable to manufacturing a drive duration, but the estimate should not be used for navigation or as proof that itinerary gaps are sufficient.
+The Traveling Salesperson Problem (TSP) and Orienteering Problem provide formal models for selecting and ordering destinations under travel and time limits \cite{applegate2006traveling,vansteenwegen2011orienteering}. The repository does not implement an exact TSP solver or a road-network optimizer. Its fixed schedule slots establish temporal separation, and its route helper reports approximate distances after a draft is built. A future optimizer could combine road-network durations, opening-time windows, and explicit user utility, but would require reliable routing data and a defined objective.
+
+\section{Open Geographic Data and Data Quality}
+
+OpenStreetMap is a collaborative map database with uneven attribute coverage \cite{haklay2008openstreetmap}. An open extract can cover a wide area, but it is not a curated tourism catalogue. Names, category tags, addresses, and operating details depend on local mapping practices. The repository records its Vietnam OSM shapefile as an October 2026 extract under the Open Database License. The import script selects tourism-related feature classes and filters out records without names or with coordinates outside Vietnam.
+
+Data cleaning therefore has a direct effect on system behavior. Excluding unnamed records avoids returning blank labels, while retaining null prices and hours avoids false precision. Deduplicating source identifiers is necessary when features occur in more than one shapefile layer. At the same time, a coordinate bounding box is a coarse geographic rule: it may include offshore or border-adjacent records and does not establish administrative membership. A result whose address is only a coordinate fallback remains less useful to a traveler than a verified street address.
+
+\section{Comparison and Research Gap}
+
+Table~\ref{tab:related_comparison} contrasts broad capability families with the evidence present in this repository. The comparison is descriptive and does not claim a controlled head-to-head experiment.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Capability comparison for travel-assistant design}
+    \label{tab:related_comparison}
+    \renewcommand{\arraystretch}{1.25}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.0cm} >{\raggedright\arraybackslash}p{4.0cm} X}
+        \toprule
+        \textbf{Approach} & \textbf{Strength} & \textbf{Limitation in the travel setting} \\
+        \midrule
+        Keyword / SQL search & Exact matching and transparent structured filters & Sensitive to wording and metadata quality; does not rank by learned preference \\
+Dense vector retrieval & Can match semantically related phrasing \cite{karpukhin2020dense,reimers2019sentence} & Requires a configured embedding/index path and a relevance benchmark; absent from the default itinerary path \\
+        LLM-only response & Flexible natural-language interaction \cite{brown2020language} & May state unsupported or outdated place facts; does not enforce schedule constraints by itself \\
+        Retrieval-grounded generation & Conditions text generation on retrieved evidence \cite{lewis2020retrieval} & Quality depends on retrieval recall, source freshness, and faithful use of evidence \\
+        Constraint validator & Reproducible rejection of defined invalid states & Cannot verify rules that are not represented, such as live traffic, budget arithmetic, or all opening-hour formats \\
+        Project itinerary workflow & SQL candidate retrieval, deterministic schedule, checks, draft/confirm boundary & Does not include measured ranking quality or live road-time optimization in the inspected path \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+The engineering gap addressed by the repository is not that existing systems lack conversational or geographic features in general. Rather, it is the integration challenge of connecting a local geographic dataset, a web interface, a draft-generation flow, explicit validation, and authenticated persistence while preserving the distinction between known values and estimates. The main research opportunity is to evaluate whether this integration improves grounded usefulness and schedule feasibility under realistic Vietnamese travel queries. The available snapshot establishes implementable mechanisms and initial test scenarios, but it does not yet answer that empirical question.

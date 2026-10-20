@@ -1,0 +1,70 @@
+\chapter{Introduction}
+\label{chap:introduction}
+
+\section{Background}
+
+Travel planning brings together information that is usually scattered across maps, business listings, booking sites, public transport pages, and local recommendations. A traveler may begin with a broad question such as where to eat near a landmark, then refine it with a location, a date, a preferred pace, or a limited amount of time. A useful assistant therefore needs to do more than produce fluent text. It must retrieve places that exist, preserve their geographic identity, make the limits of incomplete information visible, and present a schedule that can be understood and changed.
+
+This problem is especially concrete in a destination catalogue assembled from community-maintained geographic data. OpenStreetMap is a collaborative source of geographic features, and its coverage and tagging vary by place and feature type \cite{haklay2008openstreetmap}. A record can have a name and coordinates while lacking opening hours, prices, or a street address. A system that fills those gaps with plausible-sounding guesses may appear helpful while making a traveler less informed. The design challenge is thus twofold: use structured records to ground place identity, and retain explicit uncertainty where records are incomplete.
+
+Large language models (LLMs) have made it practical to interpret open-ended questions and produce natural-language responses. Transformer models provide a flexible foundation for this interaction \cite{vaswani2017attention,brown2020language}. However, a model's linguistic fluency does not guarantee that an attraction exists, that a price is current, or that a proposed trip can be completed on time. Retrieval-augmented generation (RAG) addresses part of this problem by conditioning generation on retrieved evidence \cite{lewis2020retrieval,gao2023retrieval}. It does not, by itself, make the data current or complete, prove that the retrieval is relevant, or validate a schedule.
+
+The repository examined in this report, \textit{ChatbotTravel\_server} (also branded in the source documentation as \textit{VietTravel AI}), is a Python web application for travel search and itinerary management. It uses Flask and Flask-RESTX to expose HTTP endpoints, SQLAlchemy to model relational data, and PostgreSQL as its intended database. A local web client is served from the same Flask application. The data pipeline prepares tourism-related points of interest (POIs) from Vietnam OSM shapefiles and loads normalized records into a PostgreSQL staging table.
+
+There are two related but distinct interaction paths in the codebase. The travel-chat path detects language, extracts intent and features, searches the staging data, and uses configured text-generation providers when available. The itinerary path accepts a structured planning request, retrieves candidate POIs, builds a draft with a deterministic scheduling routine by default, validates it, and returns it without persistence. A separate confirmation operation checks a bearer token and persists a confirmed schedule. Keeping these paths distinct is important: the source code does not implement one autonomous graph in which every chatbot request passes through the itinerary planner.
+
+\section{Problem Statement}
+
+The project addresses a practical engineering question:
+
+\begin{quote}
+How can a web-based travel assistant combine conversational access to destination data with a constrained itinerary workflow while making the source and certainty of place, schedule, and route information explicit?
+\end{quote}
+
+The question decomposes into several implementation concerns:
+\begin{enumerate}[leftmargin=1.8em,itemsep=4pt]
+    \item \textbf{Geographic grounding.} A generated answer should use POIs retrieved from the requested geographic scope and should retain the source identifier and coordinates needed to trace a recommendation back to the catalogue.
+    \item \textbf{Incomplete attributes.} Community records do not consistently contain price, rating, contact information, or opening hours. Unknown values must remain unknown rather than being silently substituted with invented values.
+    \item \textbf{Schedule validity.} A generated one-day schedule needs unique stops, valid coordinates, properly formatted time intervals, no overlaps, and a reasonable upper bound on the day span. Geographic distance and actual driving time are different quantities and should not be conflated.
+    \item \textbf{Persistence and identity.} A plan assembled from OSM identifiers is not automatically a record in the application's curated \code{Attractions} table. The draft and confirmation stages must preserve this distinction and verify the authenticated user before writing.
+    \item \textbf{Evaluability.} A useful capstone report should separate source-code behavior, dataset manifests, and test definitions from measured model quality or runtime performance. These evidence types answer different questions.
+\end{enumerate}
+
+\section{Objectives}
+
+The engineering objectives reflected in the inspected source tree are:
+\begin{enumerate}[leftmargin=1.8em,itemsep=2pt,parsep=0pt,topsep=3pt]
+    \item Provide a REST API and browser interface for travel questions and itinerary planning.
+    \item Prepare Vietnam OSM data as named POIs with standardized categories, coordinates, and source metadata.
+    \item Search PostgreSQL by text or category, and by radius when coordinates are available.
+    \item Build one-day itinerary drafts from retrieved candidates, using the deterministic planner by default.
+    \item Validate each draft in application code and report errors separately from warnings.
+    \item Let verified users confirm a draft and save it transactionally.
+    \item State implementation limits and propose an evaluation plan without presenting unrun experiments as results.
+\end{enumerate}
+
+\section{Scope and Non-Goals}
+
+The report covers the contents of the repository snapshot, including the Flask entry point, application factory, controllers, service modules, ORM models, SQL migrations, data-import scripts, OSM files, the pilot JSON fixture, and the current regression-test source. The report describes the intended local development setup from \code{docker-compose.dev.yml} and \code{requirements.txt}.
+
+The work examined here does not establish that a particular PostgreSQL instance currently contains all records described in the data manifest. It does not provide an independently labeled relevance dataset, a human evaluation panel, a reproducible load-test log, or a model-quality benchmark. The source includes optional integration code for Google Gemini in the planner and a separate provider path in the chatbot; the itinerary controller explicitly calls the planner with external API execution disabled. Consequently, the default itinerary result is produced by a deterministic heuristic rather than by a live Gemini call. The codebase also contains optional ChromaDB-related code, but the itinerary orchestrator explicitly disables it when it searches PostgreSQL.
+
+The project should therefore be interpreted as a working prototype with implementable interfaces and validation rules, not as evidence of production-scale coverage or measured recommendation quality. In particular, a static validator can reject malformed data but cannot guarantee a correct road route, current business hours, accessibility, price, safety, or user satisfaction.
+
+\section{Method and Evidence Policy}
+
+This report was prepared by inspecting the repository's source files and included documentation. Its implementation claims refer to named modules and executable paths. Its dataset counts refer to \url{data/osm_full_ingestion_summary.json} and are treated as manifest values rather than a live database count. Its testing discussion describes the cases in \url{tests/test_multi_agent_flow.py} and a local run on 21 October 2026 using the project virtual environment with Python 3.10.11. All nine cases passed; database and provider calls were mocked. The result applies to the local working tree at that time and is not a live integration, model-quality, or performance benchmark.
+
+Evidence is classified in three ways throughout the report:
+\begin{description}[leftmargin=2.1cm,style=standard,itemsep=1pt,parsep=0pt]
+    \item[Recorded] A value appears in a committed data file, configuration file, migration, or test definition.
+    \item[Implemented] A behavior is traceable to a function or controller path in the source code.
+    \item[Unmeasured] A performance, quality, or operational outcome for which the snapshot provides no reproducible run output.
+\end{description}
+This policy is particularly relevant to Chapter~\ref{chap:results_discussion}: the manifest provides descriptive counts, and test source provides test intentions, but neither is equivalent to an executed end-to-end benchmark.
+
+\section{Contributions and Report Organization}
+
+The repository's principal engineering contribution is an end-to-end structure connecting geographic data preparation to a web-facing travel application. The data loader filters and normalizes selected OSM layers; a relational staging model preserves the source identifier and source attributes; search services provide database-backed candidates; the planner produces a time-ordered draft; and a validator checks a defined set of structural and scheduling constraints. Authentication and itinerary persistence are implemented as complementary application features.
+
+Chapter~\ref{chap:related_work} reviews recommendation, grounding, agent orchestration, and geographic planning concepts relevant to the implemented design. Chapter~\ref{chap:dataset} describes the available OSM evidence, import rules, schema, and data-quality caveats. Chapter~\ref{chap:model_configuration} explains the running architecture and its model/provider configuration. Chapter~\ref{chap:results_discussion} reports only reproducible evidence found in the repository, discusses limitations, and proposes a future evaluation protocol. Appendices provide a compact data dictionary, endpoint inventory, and the test and evaluation checklist.

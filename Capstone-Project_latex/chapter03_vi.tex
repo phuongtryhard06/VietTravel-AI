@@ -1,0 +1,157 @@
+\chapter{Tập dữ liệu và tiền xử lý}
+\label{chap:dataset}
+
+\section{Nguồn dữ liệu và phạm vi}
+
+Nguồn địa lý chính là bộ shapefile OSM Việt Nam. README trong kho ghi nhận đây là gói Geofabrik Việt Nam được lấy vào tháng 10/2026, tạo từ OpenStreetMap và phát hành theo Giấy phép Cơ sở dữ liệu Mở (ODbL). Mốc tháng và năm được nêu để mô tả nguồn gốc dữ liệu; nó không khẳng định bản trích xuất vẫn mới nhất hoặc đang được cập nhật.
+
+Tập lệnh nhập \code{scripts/import\_all\_osm\_poi.py} xử lý ba lớp:
+\begin{itemize}[leftmargin=1.8em,itemsep=3pt]
+    \item \code{gis\_osm\_pois\_free\_1}, gồm các điểm có tên như nhà hàng, quán cà phê, khách sạn và đối tượng du lịch;
+    \item \code{gis\_osm\_pofw\_free\_1}, gồm địa điểm thờ tự;
+    \item \code{gis\_osm\_natural\_free\_1}, gồm một số đối tượng tự nhiên có tên.
+\end{itemize}
+Các tệp nguồn còn có ranh giới hành chính, đường bộ, đường sắt, sông ngòi, công trình và lớp khác, nhưng bộ nhập POI tổng thể chỉ chọn ba lớp trên. Việc này giảm các bản ghi không liên quan đến danh mục du lịch và tập trung quy trình nhập chính.
+
+Kho mã cũng có bộ dữ liệu \code{data/osm\_vietnam\_pilot\_sample.json} gồm 15 bản ghi, được dùng trong kiểm thử hồi quy. Bộ này có năm loại quan sát, gồm nhà hàng, quán cà phê, khách sạn, chùa Phật giáo và điểm tham quan núi. Đây là mẫu xác định để kiểm tra hành vi lập lịch ngoại tuyến, không phải mẫu thống kê đại diện cho dữ liệu toàn quốc.
+
+\section{Lọc ứng viên và chuẩn hóa}
+
+Danh sách cho phép của bộ nhập ánh xạ lớp đối tượng OSM (\code{fclass}) sang loại hiển thị cho người dùng và nhóm rộng hơn. Danh sách bao gồm ăn uống, lưu trú, điểm tham quan, công viên, bảo tàng, địa điểm thờ tự, đài tưởng niệm và một số đối tượng tự nhiên. Bộ lọc loại bản ghi thiếu tên hiển thị, lớp ngoài danh sách và tọa độ nằm ngoài hộp giới hạn Việt Nam đã cấu hình. Giới hạn triển khai là vĩ độ từ $8.0^\circ$ đến $24.0^\circ$, kinh độ từ $102.0^\circ$ đến $110.0^\circ$. Đây là hình chữ nhật thực dụng, không phải đa giác ranh giới hành chính.
+
+Với bản ghi được giữ lại, bộ nhập bảo toàn lớp nguồn, mã OSM, lớp OSM và mã số, tên, tọa độ, thuộc tính gốc cùng thẻ. Hệ thống tạo loại chuẩn hóa và mô tả tóm tắt. Nếu không có địa chỉ dùng được, giá trị dự phòng được cấu hình là câu tiếng Việt rõ nghĩa: \textit{Chưa có địa chỉ cụ thể; dùng tọa độ OpenStreetMap}. Giá, đánh giá, giờ mở cửa, số điện thoại và URL hình ảnh chưa biết được giữ là null. Cách làm này giữ nguồn gốc dữ liệu và tránh biến thông tin thiếu thành dữ kiện bịa đặt.
+
+Lệnh nhập mặc định chạy thử phân tích, chưa ghi dữ liệu; tùy chọn \code{--apply} mới bật ghi vào cơ sở dữ liệu. Kích thước lô có thể cấu hình, mặc định được tài liệu ghi là 1.000. Bảng staging áp đặt tính duy nhất cho mã OSM; bộ nhập dùng upsert theo \code{osm\_id} để cập nhật bản ghi nguồn đã có hoặc chèn bản ghi mới. Migration khai báo cột JSONB cho thẻ, bí danh và thuộc tính gốc, nhờ đó chi tiết nguồn có thể được lưu mà không cần tách mọi thuộc tính OSM thành một cột quan hệ riêng.
+
+Có thể tóm tắt luồng chuyển đổi thành chuỗi bộ lọc giữ lại nguồn gốc dữ liệu. Hình~\ref{fig:poi_ingestion_pipeline} thể hiện cấu hình mặc định của bộ nhập: chỉ ghi vào cơ sở dữ liệu khi có tùy chọn \code{--apply}.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        databox/.style={draw=black, fill=black!4, rounded corners=2pt,
+            align=center, text width=3.25cm, minimum height=2.05cm,
+            inner sep=1.5mm, font=\small},
+        dataflow/.style={-{Stealth[length=2mm]}, thick, draw=black},
+        node distance=4mm
+    ]
+        \node[databox] (source) {Bản trích xuất OSM Việt Nam\\ba lớp điểm được chọn};
+        \node[databox, right=of source] (filter) {Kiểm tra hình học điểm và phạm vi Việt Nam\\yêu cầu tên và lớp đối tượng cho phép};
+        \node[databox, right=of filter] (normalize) {Chuẩn hóa danh mục\\giữ mã nguồn và thẻ\\để trống thuộc tính chưa biết};
+        \node[databox, right=of normalize] (load) {Khử trùng theo \code{osm\_id}\\mặc định: báo cáo dry-run\\tùy chọn: upsert theo lô};
+        \draw[dataflow] (source) -- (filter);
+        \draw[dataflow] (filter) -- (normalize);
+        \draw[dataflow] (normalize) -- (load);
+    \end{tikzpicture}
+    \caption{Luồng lọc và nạp POI được dựng từ mã nguồn}
+    \label{fig:poi_ingestion_pipeline}
+\end{figure}
+
+\section{Hồ sơ tập dữ liệu đã ghi nhận}
+
+Tệp đã lưu trong kho \code{data/osm\_full\_ingestion\_summary.json} là nguồn cho hồ sơ mô tả trong mục này. Tệp ghi 30.941 ứng viên sau lọc và 30.839 định danh duy nhất. Số liệu theo lớp và số lượng bị loại được chép lại trong Bảng~\ref{tab:osm_layer_profile}. Đây là giá trị trong bản tổng hợp xử lý, không phải kết quả truy vấn trực tiếp cơ sở dữ liệu.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Số liệu lọc theo lớp được ghi trong bản tổng hợp nhập OSM}
+    \label{tab:osm_layer_profile}
+    \renewcommand{\arraystretch}{1.2}
+    \small
+    \setlength{\tabcolsep}{3.5pt}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}X r r r r r}
+        \toprule
+        \textbf{Lớp nguồn} & \textbf{Đầu vào} & \textbf{Ứng viên} & \textbf{Thiếu tên} & \textbf{Loại} & \textbf{Tọa độ} \\
+        \midrule
+        POI OSM & 75.037 & 28.482 & 23.862 & 22.678 & 15 \\
+        Địa điểm thờ tự & 1.375 & 1.127 & 248 & 0 & 0 \\
+        Đối tượng tự nhiên & 34.009 & 1.332 & 32.596 & 81 & 0 \\
+        \midrule
+        \textbf{Tổng} & \textbf{110.421} & \textbf{30.941} & \textbf{56.706} & \textbf{22.759} & \textbf{15} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Tổng theo nhóm danh mục trong cùng tệp là 30.839, như Bảng~\ref{tab:osm_group_profile}. Dữ liệu tập trung chủ yếu vào ăn uống và lưu trú. Số bản ghi nhiều trong một nhóm không đồng nghĩa chất lượng hoặc độ đầy đủ cao; đó chỉ là số lượng định danh được phân loại trong bản tổng hợp.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Số POI duy nhất theo nhóm danh mục chuẩn hóa}
+    \label{tab:osm_group_profile}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabularx}{0.78\textwidth}{>{\raggedright\arraybackslash}X r r}
+        \toprule
+        \textbf{Nhóm danh mục} & \textbf{Bản ghi} & \textbf{Tỷ lệ} \\
+        \midrule
+        Ăn uống & 18.317 & 59,40\% \\
+        Lưu trú & 6.454 & 20,92\% \\
+        Du lịch & 2.082 & 6,75\% \\
+        Thiên nhiên & 1.311 & 4,25\% \\
+        Địa điểm tâm linh & 1.129 & 3,66\% \\
+        Văn hóa & 789 & 2,56\% \\
+        Lịch sử & 643 & 2,08\% \\
+        Giải trí & 114 & 0,37\% \\
+        \midrule
+        \textbf{Tổng} & \textbf{30.839} & \textbf{100,00\%} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Vấn đề đối soát trong tệp kê khai}
+
+Bản tổng hợp ghi 30.941 ứng viên và 30.839 định danh duy nhất, chênh lệch 102 dòng. Một trường riêng lại báo 100 định danh trùng, gồm 27 trùng giữa các lớp và 73 trùng trong cùng lớp. Các trường này không khớp về số học: tổng trùng được nêu thấp hơn hai so với chênh lệch suy ra từ tổng ứng viên và tổng duy nhất. Tổng nhóm danh mục khớp với 30.839 duy nhất. Báo cáo ghi nhận sai khác thay vì tự ý điều chỉnh; cần chạy lại bộ nhập kèm kiểm tra từng định danh trước khi dùng các con số này làm tổng chấp nhận cuối cùng của cơ sở dữ liệu.
+
+Bản tổng hợp còn có khối phân tích chồng lấp ghi 30.839 bản ghi staging hiện có và 30.839 bản cập nhật, đồng thời không có bản chèn hoặc xóa. Khối này thể hiện trạng thái tại thời điểm quy trình tạo bản tổng hợp, không xác nhận độc lập trạng thái hiện tại của PostgreSQL đang chạy. Bản chụp kho không có bản sao cơ sở dữ liệu hoặc kết quả truy vấn để xác minh bảng staging hiện còn số dòng đó. Khối \code{core\_tables} liệt kê 0 bản ghi cho Attractions, Users và Itineraries trong phân tích của tệp kê khai; không nên hiểu các số này là thống kê cơ sở dữ liệu đang vận hành hôm nay.
+
+\section{Biểu diễn quan hệ}
+
+Ứng dụng dùng mô hình SQLAlchemy cho tài khoản, hội thoại, lịch trình và địa điểm. Bảng~\ref{tab:application_schema} tóm tắt các thực thể chính nhìn thấy trong ORM và migration staging. Các bảng ứng dụng theo kiểu sản phẩm dùng tên hỗn hợp chữ hoa-thường như \code{Users}, \code{Attractions} và \code{ItineraryItems}, trong khi bảng staging OSM có tên chữ thường \code{osm\_attractions\_staging}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Các thực thể quan hệ chính trong mô hình ứng dụng được khảo sát}
+    \label{tab:application_schema}
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{4.0cm} X}
+        \toprule
+        \textbf{Thực thể} & \textbf{Định danh và liên kết} & \textbf{Mục đích và trường đáng chú ý} \\
+        \midrule
+        Users & \code{user\_id} kiểu số nguyên; cha của hội thoại và lịch trình & Email, mã băm mật khẩu, ngôn ngữ ưu tiên, trạng thái xác minh \\
+        Attractions & \code{id} kiểu chuỗi; được mục lịch trình tham chiếu & Chi tiết địa điểm đã biên tập, tọa độ, loại, giá và giờ tùy chọn \\
+        Conversations & \code{conversation\_id} kiểu số nguyên; khóa ngoại tới Users & Thời gian bắt đầu/kết thúc, ngôn ngữ nguồn, tiêu đề \\
+        Messages & \code{message\_id} kiểu số nguyên; khóa ngoại tới Conversations & Người gửi, văn bản, bản dịch, URL giọng nói, danh sách địa điểm JSON \\
+        Itineraries & \code{id} kiểu số nguyên; khóa ngoại tới Users & Ngày chọn, tiêu đề, ghi chú, cờ xóa mềm \\
+        ItineraryItems & \code{id} kiểu số nguyên; liên kết Itineraries và Attractions & Thời gian, thời lượng, ghi chú, thứ tự ghé thăm \\
+        Notifications & \code{id} kiểu số nguyên; liên kết Users và Itineraries & Nội dung nhắc, giờ gửi, trạng thái đã gửi/đọc/xóa \\
+        OTP & \code{id} kiểu số nguyên; khóa theo email và mục đích trong dịch vụ & Mã xác minh hoặc đặt lại mật khẩu và thời hạn \\
+        OSM staging & ID dòng số nguyên; \code{osm\_id} duy nhất & Nguồn/lớp OSM, loại chuẩn hóa, GPS, thuộc tính JSONB \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Việc tách \code{osm\_attractions\_staging} khỏi \code{Attractions} có ý nghĩa kiến trúc. Bản staging được định danh bằng \code{osm\_id}; mục lịch trình tham chiếu \code{Attractions.id} của ứng dụng. Dịch vụ xác nhận vì vậy phải tìm hoặc tạo bản ghi attraction tương ứng và kiểm tra lại bản ghi OSM trước khi lưu. Nếu coi mã OSM là khóa của attraction lõi thì tính toàn vẹn tham chiếu sẽ bị phá vỡ.
+
+\section{Tiền xử lý không gian và văn bản}
+
+Bộ nhập chuẩn hóa lớp đối tượng thành danh mục, giữ mã nguồn và kiểm tra phạm vi tọa độ trước khi nạp dữ liệu. Với tìm kiếm theo bán kính, \code{poi\_search\_tool.py} dùng hai bước. Trước tiên, hàm tính hình chữ nhật bao quanh tâm tìm kiếm để giảm số dòng ứng viên. Sau đó, hàm tính khoảng cách Haversine trong SQL, loại kết quả ngoài bán kính yêu cầu, sắp theo khoảng cách tăng dần và áp dụng giới hạn kết quả sau khi đã sắp xếp. Nhờ vậy, các kết quả đầu không được chọn chỉ theo thứ tự ID trong bảng khi truy vấn có yếu tố không gian.
+
+Phép tính dùng bán kính Trái Đất trung bình 6.371 km. Với tâm $(\phi_c,\lambda_c)$ và bản ghi $(\phi,\lambda)$, tất cả góc được đổi sang radian. Khoảng cách trực tiếp:
+\begin{equation}
+    d = 2R\arcsin\sqrt{
+        \sin^2\left(\frac{\phi-\phi_c}{2}\right)
+        + \cos(\phi_c)\cos(\phi)
+          \sin^2\left(\frac{\lambda-\lambda_c}{2}\right)}.
+\end{equation}
+Độ rộng kinh độ của hộp giới hạn được điều chỉnh theo cosin vĩ độ tâm và có chặn dưới trong mã nguồn. Đây là bước tối ưu truy vấn; điều kiện Haversine vẫn là bộ lọc cuối cùng theo bán kính.
+
+Tìm kiếm văn bản dùng các điều kiện \code{LIKE} đã chuẩn hóa chữ hoa-thường trên tên, danh mục hoặc lớp đối tượng; tham số SQL được truyền riêng. Đây là khớp từ vựng, không phải mô hình tìm kiếm ngữ nghĩa tiếng Việt. Dịch vụ chatbot có thêm hàm trích xuất ý định và đặc trưng, nhưng API lập lịch dùng các trường yêu cầu đã chuẩn hóa riêng. Không nên mặc định rằng hệ thống có chuẩn hóa dấu, mở rộng truy vấn hay bí danh tên đa ngôn ngữ nếu luồng cụ thể không triển khai những chức năng đó.
+
+\section{Chất lượng dữ liệu, giấy phép và khả năng tái lập}
+
+Mô hình dữ liệu chủ động cho phép giá, đánh giá, giờ mở cửa, số điện thoại và ảnh ở dạng chưa biết. Điều này trung thực về tri thức nhưng giới hạn mức cá nhân hóa của lịch trình. Nếu giờ mở cửa là null, bộ xác thực phát cảnh báo và đề nghị du khách tự kiểm tra. Hàm chỉ phân tích định dạng đơn giản \code{HH:MM-HH:MM}; biểu thức OSM phức tạp được xem là cần xác nhận thủ công. Địa chỉ thiếu được thay bằng chuỗi dự phòng, không phải địa danh được dịch ngược từ tọa độ.
+
+Khi phân phối hoặc cung cấp công khai tập dữ liệu OSM, cần giữ thông tin ghi công và tuân thủ giấy phép cơ sở dữ liệu. README nguồn nêu ODbL và ngày của dữ liệu, nhưng giao diện web cùng lược đồ phản hồi API được khảo sát không cho thấy trường ghi công nhất quán cho từng địa điểm. Bản triển khai cần hiển thị ghi công theo yêu cầu và thông báo các thay đổi đối với cơ sở dữ liệu, đồng thời lưu ngày trích xuất cùng phiên bản bộ nhập để có thể tái lập.
+
+Dự án cung cấp đủ tạo tác cục bộ để mô tả thiết kế xử lý dữ liệu: shapefile gốc, mã nhập, DDL migration, tệp tổng hợp dữ liệu và bộ mẫu kiểm thử nhỏ. Một bản phát hành tập dữ liệu có thể tái lập nên ghi thêm tham số dòng lệnh, checksum tệp nguồn, phiên bản Python và các gói, số dòng trong cơ sở dữ liệu, cùng báo cáo đối soát trùng lặp đầy đủ. Các thông tin này giúp phân biệt thay đổi từ bản trích xuất nguồn với thay đổi do mã chuyển đổi.
+
+\section{Tóm tắt}
+
+Kho mã có luồng nhập OSM ở quy mô toàn quốc và lược đồ staging được thiết kế để giữ định danh nguồn cùng thông tin về thuộc tính còn thiếu. Bản tổng hợp xử lý đã lưu mô tả khoảng ba mươi nghìn POI được phân loại; nhóm ăn uống và lưu trú chiếm phần lớn. Tệp này cũng có sai khác số học hai bản ghi trong phần thống kê trùng lặp. Bộ dữ liệu mẫu và tệp kê khai không chứng minh rằng toàn bộ bản ghi hiện đang có trong cơ sở dữ liệu đã cấu hình. Những lưu ý này là cơ sở để đọc thiết kế và đánh giá ở các chương sau: độ bao phủ và chất lượng dữ liệu là hai thuộc tính riêng, cần được kiểm tra trực tiếp.

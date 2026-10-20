@@ -1,0 +1,84 @@
+% Samsung Innovation Campus AI Course -- Capstone Project Final Report
+% Compiler: XeLaTeX or LuaLaTeX; bibliography: Biber
+\documentclass{sicaireport}
+
+\input{metadata}
+\input{preamble}
+
+\begin{document}
+\makecoverpage
+\maketitledetailpage
+
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+VietTravel AI is a Flask-based travel assistant for discovering places in Vietnam and preparing one-day itinerary drafts. The repository combines a natural-language travel-search path with a separate itinerary-planning workflow. The search path detects a supported language, extracts travel-related features, queries a PostgreSQL staging table populated from OpenStreetMap (OSM), and asks a configured language-model provider to compose a response when credentials are available. The itinerary endpoint retrieves candidate points of interest (POIs), applies a deterministic schedule planner by default, checks the resulting draft against explicit identity, time, and coordinate rules, and returns the draft without saving it. A separately authenticated confirmation endpoint revalidates and persists a draft against the relational application schema.
+
+This report documents what is present in the source tree and the accompanying data manifests. The available nationwide OSM processing summary reports 30,941 filtered candidates and 30,839 unique identifiers, although its duplicate-count fields do not reconcile exactly. The repository includes a 15-record pilot fixture and a nine-case unittest module using mocked provider and database calls. The suite was executed against the current local working tree with the project virtual environment (Python 3.10.11): all nine tests passed in 0.048 seconds. This is limited regression evidence for the tested paths, not a live database/provider evaluation. No reproducible model benchmark or load-test result is available. Accordingly, the experimental chapter separates the recorded dataset profile and passing regression run from model and system measurements that remain to be performed.
+
+\medskip
+\noindent\textbf{Keywords:} travel assistant, itinerary planning, OpenStreetMap, PostgreSQL, Flask, deterministic validation, Vietnam tourism.
+\clearpage
+
+\renewcommand{\contentsname}{Contents}
+\setcounter{tocdepth}{2}
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+
+\chapter*{List of Abbreviations}
+\addcontentsline{toc}{chapter}{List of Abbreviations}
+\begin{table}[htbp]
+    \centering
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{p{3.2cm} X}
+        \toprule
+        \textbf{Abbreviation} & \textbf{Definition} \\
+        \midrule
+        AI & Artificial intelligence \\
+        API & Application programming interface \\
+        CORS & Cross-origin resource sharing \\
+        GPS & Global Positioning System \\
+        Haversine & Great-circle distance formula for spherical coordinates \\
+        HTTP & Hypertext Transfer Protocol \\
+        JSON & JavaScript Object Notation \\
+        JWT & JSON Web Token \\
+        LLM & Large language model \\
+        MAS & Multi-agent system \\
+        OSM & OpenStreetMap \\
+        OTP & One-time password \\
+        POI & Point of interest \\
+        REST & Representational State Transfer \\
+        SQL & Structured Query Language \\
+        SMTP & Simple Mail Transfer Protocol \\
+        UI & User interface \\
+        VND & Vietnamese dong \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+\clearpage
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{chapter01}
+\input{chapter02}
+\input{chapter03}
+\input{chapter04}
+\input{chapter05}
+
+\clearpage
+\printbibliography[heading=bibintoc,title={References}]
+
+\clearpage
+\input{appendices}
+
+\clearpage
+\input{instructor_review}
+
+\end{document}

@@ -1,0 +1,24 @@
+name: chatbottravel-dev
+
+services:
+  db:
+    image: ankane/pgvector:v0.5.1
+    container_name: chatbottravel-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:?DB_USER must be set in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      POSTGRES_DB: ${DB_NAME:-scapedata_db}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - chatbottravel_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  chatbottravel_pgdata:
+    name: chatbottravel_pgdata
