@@ -33,8 +33,8 @@ Nếu bạn có ý tưởng cải thiện hệ thống:
 1. Fork repository này
 2. Clone fork về máy local:
    ```bash
-   git clone https://github.com/phamvangjang/ChatbotTravel_server
-   cd ChatbotTravel_server
+   git clone https://github.com/phuongtryhard06/VietTravel-AI.git
+   cd VietTravel-AI
    ```
 
 3. Tạo branch mới cho feature/fix:
@@ -152,8 +152,7 @@ python -m pytest tests/test_auth.py
 
 Nếu bạn có câu hỏi hoặc cần hỗ trợ:
 
-- Tạo issue với label "question"
-- Liên hệ qua email: [vangiangpham.work@gmail.com]
+- Tạo issue trên GitHub repository
 - Tham gia discussion trong repository
 
 ## License

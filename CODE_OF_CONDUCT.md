@@ -34,7 +34,7 @@ This Code of Conduct applies within all project spaces, and also applies when an
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at [vangiangpham.work@gmail.com]. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the repository maintainers through GitHub. All complaints will be reviewed and investigated promptly and fairly.
 
 All project maintainers are obligated to respect the privacy and security of the reporter of any incident.
 
@@ -46,6 +46,6 @@ This Code of Conduct is adapted from the [Contributor Covenant][homepage], versi
 
 ## Quy tắc ứng xử (Tiếng Việt)
 
-Chúng tôi cam kết xây dựng một cộng đồng thân thiện, tôn trọng và hòa nhập. Mọi hành vi quấy rối, phân biệt đối xử, hoặc xúc phạm đều không được chấp nhận. Nếu bạn gặp vấn đề, hãy liên hệ với nhóm phát triển qua email ở trên.
+Chúng tôi cam kết xây dựng một cộng đồng thân thiện, tôn trọng và hòa nhập. Mọi hành vi quấy rối, phân biệt đối xử, hoặc xúc phạm đều không được chấp nhận. Mọi phản hồi vui lòng gửi qua mục trao đổi của dự án trên GitHub.
 
 [homepage]: https://www.contributor-covenant.org 

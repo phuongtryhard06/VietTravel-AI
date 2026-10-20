@@ -8,9 +8,7 @@ We currently support the latest stable release of this project. Please always us
 
 If you discover a security vulnerability in this project, please report it privately. **Do not create a public issue.**
 
-- Email us at: [vangiangpham.work@gmail.com]
-- Include as much detail as possible to help us understand and resolve the issue quickly (steps to reproduce, impact, possible fixes, etc.)
-- We will acknowledge receipt of your report within 2 business days and strive to provide a resolution as soon as possible.
+- Please report via GitHub Security Advisory (private vulnerability reporting on the repository).
 
 ## Disclosure Policy
 
@@ -27,7 +25,7 @@ We will work with you to confirm the vulnerability and will release a fix as soo
 
 ## Chính sách bảo mật (Tiếng Việt)
 
-Nếu bạn phát hiện lỗ hổng bảo mật, vui lòng liên hệ riêng qua email ở trên. Không công khai thông tin lỗ hổng cho đến khi được xác nhận và khắc phục. Chúng tôi cam kết xử lý nhanh chóng và minh bạch mọi vấn đề bảo mật.
+Nếu bạn phát hiện lỗ hổng bảo mật, vui lòng báo cáo riêng tư qua GitHub Security Advisory. Không công khai thông tin lỗ hổng cho đến khi được xác nhận và khắc phục.
 
 ---
 

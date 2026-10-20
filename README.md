@@ -133,8 +133,8 @@ flowchart TD
 
 ### Bước 1: Clone Repository
 ```bash
-git clone https://github.com/phamvangjang/ChatbotTravel_server.git
-cd ChatbotTravel_server
+git clone https://github.com/phuongtryhard06/VietTravel-AI.git
+cd VietTravel-AI
 ```
 
 ---
@@ -363,13 +363,12 @@ ChatbotTravel_server/
 
 ## 👥 Thông tin Thực hiện Dự án
 
-* **Sinh viên thực hiện**: Phạm Văn Giang
-* **Giảng viên hướng dẫn**: ThS. Cô Trần Thị Dung
-* **Trường**: Trường Đại học Giao Thông Vận Tải (UTC)
+* **Sinh viên thực hiện**: Nguyễn Minh Phương, Thân Phú Cường
+* **Giảng viên hướng dẫn**: TS. Trần Quang Quý
+* **Trường**: Trường Đại học Công nghệ Thông tin và Truyền thông (ICTU)
 * **Khoa**: Công nghệ Thông tin
 * **Năm thực hiện**: 2026
-* **Mã nguồn GitHub**: [https://github.com/phamvangjang/ChatbotTravel_server](https://github.com/phamvangjang/ChatbotTravel_server)
-* **Email liên hệ**: [vangiangpham.work@gmail.com](mailto:vangiangpham.work@gmail.com)
+* **Mã nguồn GitHub**: [https://github.com/phuongtryhard06/VietTravel-AI](https://github.com/phuongtryhard06/VietTravel-AI)
 
 ---
 
