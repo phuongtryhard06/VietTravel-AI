@@ -3427,4 +3427,22 @@ body {
     display: block;
 }
 
+/* Quick City Fill Chips */
+.city-fill-chip {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+}
+
+.city-fill-chip:hover {
+    background: rgba(59, 130, 246, 0.3) !important;
+    color: #93c5fd !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
+}
+
+.city-fill-chip:active {
+    transform: translateY(0);
+}
+
+
 

@@ -46,6 +46,7 @@ const elements = {
     itineraryTimeline: document.getElementById('itinerary-timeline'),
     itineraryEmptyState: document.getElementById('itinerary-empty-state'),
     clearItineraryBtn: document.getElementById('clear-itinerary-btn'),
+    btnPlanFromSelected: document.getElementById('btn-plan-from-selected'),
 
     // AI Draft Planner (Phase I)
     planDraftForm: document.getElementById('plan-draft-form'),
@@ -567,6 +568,55 @@ function setupItinerary() {
 /* ============================================================
    5.1 AI DRAFT PLANNER & CONFIRMATION (PHASE I)
    ============================================================ */
+const CITY_COORDS = {
+    'vũng tàu': { lat: 10.3460, lng: 107.0843 },
+    'vung tau': { lat: 10.3460, lng: 107.0843 },
+    'hà nội': { lat: 21.0285, lng: 105.8542 },
+    'ha noi': { lat: 21.0285, lng: 105.8542 },
+    'hoàn kiếm': { lat: 21.0285, lng: 105.8542 },
+    'hoan kiem': { lat: 21.0285, lng: 105.8542 },
+    'ba đình': { lat: 21.0368, lng: 105.8347 },
+    'ba dinh': { lat: 21.0368, lng: 105.8347 },
+    'tây hồ': { lat: 21.0716, lng: 105.8230 },
+    'tay ho': { lat: 21.0716, lng: 105.8230 },
+    'hồ chí minh': { lat: 10.7769, lng: 106.7009 },
+    'ho chi minh': { lat: 10.7769, lng: 106.7009 },
+    'quận 1': { lat: 10.7769, lng: 106.7009 },
+    'quan 1': { lat: 10.7769, lng: 106.7009 },
+    'tphcm': { lat: 10.7769, lng: 106.7009 },
+    'sài gòn': { lat: 10.7769, lng: 106.7009 },
+    'đà nẵng': { lat: 16.0544, lng: 108.2022 },
+    'da nang': { lat: 16.0544, lng: 108.2022 },
+    'thái nguyên': { lat: 21.5942, lng: 105.8482 },
+    'thai nguyen': { lat: 21.5942, lng: 105.8482 },
+    'phổ yên': { lat: 21.4167, lng: 105.8667 },
+    'pho yen': { lat: 21.4167, lng: 105.8667 },
+    'sông công': { lat: 21.4833, lng: 105.8167 },
+    'nha trang': { lat: 12.2388, lng: 109.1967 },
+    'đà lạt': { lat: 11.9404, lng: 108.4583 },
+    'da lat': { lat: 11.9404, lng: 108.4583 },
+    'huế': { lat: 16.4637, lng: 107.5909 },
+    'hue': { lat: 16.4637, lng: 107.5909 },
+    'hội an': { lat: 15.8801, lng: 108.3380 },
+    'hạ long': { lat: 20.9505, lng: 107.0734 },
+    'quảng ninh': { lat: 20.9505, lng: 107.0734 },
+    'sa pa': { lat: 22.3364, lng: 103.8438 },
+    'phú quốc': { lat: 10.2899, lng: 103.9840 },
+    'cần thơ': { lat: 10.0452, lng: 105.7469 },
+    'ninh bình': { lat: 20.2506, lng: 105.9745 }
+};
+
+function resolveCityCoordinates(cityName) {
+    if (!cityName) return null;
+    const lower = cityName.trim().toLowerCase();
+    for (const [key, coords] of Object.entries(CITY_COORDS)) {
+        if (lower === key || lower.includes(key) || key.includes(lower)) {
+            return coords;
+        }
+    }
+    return null;
+}
+
 function initDraftPlanner() {
     if (!elements.planDraftForm) return;
 
@@ -580,6 +630,38 @@ function initDraftPlanner() {
         }
     }
 
+    // Auto geocoding on typing area
+    if (elements.draftAreaInput) {
+        elements.draftAreaInput.addEventListener('input', () => {
+            const coords = resolveCityCoordinates(elements.draftAreaInput.value);
+            if (coords) {
+                const latInput = document.getElementById('draft-latitude');
+                const lngInput = document.getElementById('draft-longitude');
+                if (latInput) latInput.value = coords.lat;
+                if (lngInput) lngInput.value = coords.lng;
+            }
+        });
+    }
+
+    // Fast city fill chips
+    document.querySelectorAll('.city-fill-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const area = chip.getAttribute('data-area');
+            const lat = chip.getAttribute('data-lat');
+            const lng = chip.getAttribute('data-lng');
+            if (elements.draftAreaInput) elements.draftAreaInput.value = area;
+            const latInput = document.getElementById('draft-latitude');
+            const lngInput = document.getElementById('draft-longitude');
+            if (latInput) latInput.value = lat;
+            if (lngInput) lngInput.value = lng;
+        });
+    });
+
+    // Plan from selected places button
+    if (elements.btnPlanFromSelected) {
+        elements.btnPlanFromSelected.addEventListener('click', handlePlanFromSelectedClick);
+    }
+
     elements.planDraftForm.addEventListener('submit', handlePlanDraftSubmit);
 
     if (elements.btnConfirmDraft) {
@@ -591,8 +673,47 @@ function initDraftPlanner() {
     }
 }
 
+function handlePlanFromSelectedClick() {
+    if (!state.itinerary || state.itinerary.length === 0) {
+        alert('Bạn chưa chọn địa điểm nào từ cuộc trò chuyện! Hãy qua mục Trò chuyện, tìm kiếm và bấm "+ Thêm vào lịch" ở các thẻ card nhé.');
+        return;
+    }
+
+    const firstItem = state.itinerary[0];
+    if (elements.draftAreaInput && !elements.draftAreaInput.value) {
+        elements.draftAreaInput.value = firstItem.khu_vuc || 'Vũng Tàu';
+    }
+
+    const withCoords = state.itinerary.filter(i => i.latitude && i.longitude);
+    const latInput = document.getElementById('draft-latitude');
+    const lngInput = document.getElementById('draft-longitude');
+
+    if (withCoords.length > 0) {
+        const avgLat = (withCoords.reduce((acc, c) => acc + Number(c.latitude), 0) / withCoords.length).toFixed(4);
+        const avgLng = (withCoords.reduce((acc, c) => acc + Number(c.longitude), 0) / withCoords.length).toFixed(4);
+        if (latInput) latInput.value = avgLat;
+        if (lngInput) lngInput.value = avgLng;
+    } else {
+        const coords = resolveCityCoordinates(firstItem.khu_vuc || elements.draftAreaInput?.value);
+        if (coords) {
+            if (latInput) latInput.value = coords.lat;
+            if (lngInput) lngInput.value = coords.lng;
+        }
+    }
+
+    if (elements.draftMaxStopsInput) {
+        elements.draftMaxStopsInput.value = String(Math.min(5, Math.max(2, state.itinerary.length)));
+    }
+
+    // Scroll to form and submit
+    if (elements.planDraftForm) {
+        elements.planDraftForm.scrollIntoView({ behavior: 'smooth' });
+        handlePlanDraftSubmit(new Event('submit'));
+    }
+}
+
 async function handlePlanDraftSubmit(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     hideDraftAlert();
     hideConfirmAlert();
 
@@ -602,21 +723,40 @@ async function handlePlanDraftSubmit(e) {
         return;
     }
 
-    const area = elements.draftAreaInput ? elements.draftAreaInput.value.trim() : '';
+    let area = elements.draftAreaInput ? elements.draftAreaInput.value.trim() : '';
     const query = elements.draftQueryInput ? elements.draftQueryInput.value.trim() : '';
-    const latitudeText = document.getElementById('draft-latitude')?.value.trim() || '';
-    const longitudeText = document.getElementById('draft-longitude')?.value.trim() || '';
+    let latitudeText = document.getElementById('draft-latitude')?.value.trim() || '';
+    let longitudeText = document.getElementById('draft-longitude')?.value.trim() || '';
     const radiusText = document.getElementById('draft-radius')?.value || '5';
     const maxStopsVal = elements.draftMaxStopsInput ? parseInt(elements.draftMaxStopsInput.value, 10) : 3;
     const preferencesVal = elements.draftPreferencesInput ? elements.draftPreferencesInput.value.trim() : '';
 
+    // If both area and query are empty, but user already selected places in list
+    if (!area && !query && state.itinerary && state.itinerary.length > 0) {
+        area = state.itinerary[0].khu_vuc || 'Vũng Tàu';
+        if (elements.draftAreaInput) elements.draftAreaInput.value = area;
+    }
+
+    // Auto-detect coordinates from area name if coords are not entered
+    if (area && (!latitudeText || !longitudeText)) {
+        const autoCoords = resolveCityCoordinates(area);
+        if (autoCoords) {
+            latitudeText = String(autoCoords.lat);
+            longitudeText = String(autoCoords.lng);
+            const latInput = document.getElementById('draft-latitude');
+            const lngInput = document.getElementById('draft-longitude');
+            if (latInput) latInput.value = latitudeText;
+            if (lngInput) lngInput.value = longitudeText;
+        }
+    }
+
     if (!area && !query) {
-        showDraftAlert('Vui lòng nhập khu vực / quận hoặc từ khóa địa điểm (ví dụ: Hoàn Kiếm, cafe...)', 'warning');
+        showDraftAlert('Vui lòng nhập khu vực (ví dụ: Vũng Tàu, Hoàn Kiếm, Đà Nẵng...) hoặc từ khóa địa điểm.', 'warning');
         return;
     }
 
     if (Boolean(latitudeText) !== Boolean(longitudeText)) {
-        showDraftAlert('Hãy nhập cả vĩ độ và kinh độ, hoặc để trống cả hai.', 'warning');
+        showDraftAlert('Hãy nhập cả vĩ độ và kinh độ, hoặc chọn nhanh tỉnh/thành phố để hệ thống tự điền.', 'warning');
         return;
     }
 
@@ -636,7 +776,7 @@ async function handlePlanDraftSubmit(e) {
         return;
     }
     if (area && latitude === null) {
-        showDraftAlert('Dữ liệu OSM hiện chỉ có tọa độ, chưa tự đổi tên quận/khu vực thành vị trí. Hãy nhập tọa độ trung tâm để giới hạn kết quả đúng khu vực.', 'warning');
+        showDraftAlert('Hãy bấm vào một trong các nút chọn nhanh (Vũng Tàu, Hà Nội, TP.HCM...) hoặc nhập tọa độ để hệ thống lọc chính xác khu vực.', 'warning');
         return;
     }
 
@@ -1110,9 +1250,11 @@ function handleDiscardDraftClick() {
 
 function showDraftAlert(msg, type = 'error') {
     if (!elements.draftAlert) return;
+    if (elements.draftResultSection) elements.draftResultSection.style.display = 'block';
     elements.draftAlert.className = `alert-box alert-${type}`;
     elements.draftAlert.innerHTML = msg;
     elements.draftAlert.style.display = 'block';
+    elements.draftAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function hideDraftAlert() {

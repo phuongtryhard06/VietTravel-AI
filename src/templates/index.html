@@ -196,7 +196,7 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="draft-area">Khu vực</label>
-                                    <input type="text" id="draft-area" class="form-control" placeholder="Ví dụ: Hoàn Kiếm, Quận 1..." required>
+                                    <input type="text" id="draft-area" class="form-control" placeholder="Ví dụ: Vũng Tàu, Hoàn Kiếm, Quận 1..." required>
                                 </div>
                                 <div class="form-group">
                                     <label for="draft-query">Từ khóa</label>
@@ -204,11 +204,11 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="draft-latitude">Vĩ độ</label>
-                                    <input type="number" id="draft-latitude" class="form-control" min="8" max="24" step="any" placeholder="Ví dụ: 21.0285">
+                                    <input type="number" id="draft-latitude" class="form-control" min="8" max="24" step="any" placeholder="Tự động điền">
                                 </div>
                                 <div class="form-group">
                                     <label for="draft-longitude">Kinh độ</label>
-                                    <input type="number" id="draft-longitude" class="form-control" min="102" max="110" step="any" placeholder="Ví dụ: 105.8542">
+                                    <input type="number" id="draft-longitude" class="form-control" min="102" max="110" step="any" placeholder="Tự động điền">
                                 </div>
                                 <div class="form-group">
                                     <label for="draft-radius">Bán kính (km)</label>
@@ -224,8 +224,16 @@
                                     </select>
                                 </div>
                             </div>
-                            <p class="form-hint" style="margin-top: 8px; color: var(--text-muted); font-size: 0.9rem;">
-                                Nhập đủ vĩ độ và kinh độ để lọc đúng khu vực.
+                            <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 10px;">
+                                <span style="font-size: 0.85rem; color: var(--text-muted);"><i class="fa-solid fa-location-dot"></i> Chọn nhanh:</span>
+                                <span class="city-fill-chip" style="cursor: pointer; padding: 3px 10px; border-radius: 999px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.82rem; border: 1px solid rgba(59, 130, 246, 0.3);" data-area="Vũng Tàu" data-lat="10.3460" data-lng="107.0843">📍 Vũng Tàu</span>
+                                <span class="city-fill-chip" style="cursor: pointer; padding: 3px 10px; border-radius: 999px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.82rem; border: 1px solid rgba(59, 130, 246, 0.3);" data-area="Hà Nội" data-lat="21.0285" data-lng="105.8542">📍 Hà Nội</span>
+                                <span class="city-fill-chip" style="cursor: pointer; padding: 3px 10px; border-radius: 999px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.82rem; border: 1px solid rgba(59, 130, 246, 0.3);" data-area="TP.HCM" data-lat="10.7769" data-lng="106.7009">📍 TP.HCM (Q1)</span>
+                                <span class="city-fill-chip" style="cursor: pointer; padding: 3px 10px; border-radius: 999px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.82rem; border: 1px solid rgba(59, 130, 246, 0.3);" data-area="Đà Nẵng" data-lat="16.0544" data-lng="108.2022">📍 Đà Nẵng</span>
+                                <span class="city-fill-chip" style="cursor: pointer; padding: 3px 10px; border-radius: 999px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.82rem; border: 1px solid rgba(59, 130, 246, 0.3);" data-area="Thái Nguyên" data-lat="21.5942" data-lng="105.8482">📍 Thái Nguyên</span>
+                            </div>
+                            <p class="form-hint" style="margin-top: 8px; color: var(--text-muted); font-size: 0.85rem;">
+                                Hệ thống sẽ tự động điền tọa độ GPS khi bạn nhập tên tỉnh/thành phố phổ biến.
                             </p>
                             <div class="form-group" style="margin-top: 12px;">
                                 <label for="draft-preferences">Sở thích (tùy chọn)</label>
@@ -233,7 +241,7 @@
                             </div>
                             <div class="form-actions" style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 12px;">
                                 <button type="submit" id="btn-submit-draft" class="btn-primary">
-                                    Tạo lịch trình
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Tạo lịch trình AI
                                 </button>
                             </div>
                         </form>
@@ -316,11 +324,16 @@
 
                     <!-- Local Selected Places Section -->
                     <div class="saved-places-section" style="margin-top: 36px;">
-                        <div class="saved-places-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                            <h3 style="font-size: 17px;">Địa điểm đã chọn</h3>
-                            <button class="btn-secondary btn-sm" id="clear-itinerary-btn">
-                                Xóa danh sách
-                            </button>
+                        <div class="saved-places-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
+                            <h3 style="font-size: 17px;"><i class="fa-solid fa-list-check" style="color: #60a5fa;"></i> Địa điểm đã chọn</h3>
+                            <div style="display: flex; gap: 8px;">
+                                <button type="button" class="btn-primary btn-sm" id="btn-plan-from-selected">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Lập lịch trình từ các điểm này
+                                </button>
+                                <button class="btn-secondary btn-sm" id="clear-itinerary-btn">
+                                    Xóa danh sách
+                                </button>
+                            </div>
                         </div>
 
                         <div id="itinerary-empty-state" class="empty-state">
