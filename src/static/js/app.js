@@ -119,7 +119,11 @@ document.addEventListener('DOMContentLoaded', () => {
    1. THEME TOGGLE
    ============================================================ */
 function initTheme() {
-    const savedTheme = localStorage.getItem('viet_travel_theme') || 'light';
+    let savedTheme = localStorage.getItem('viet_travel_theme');
+    if (!savedTheme || savedTheme === 'light') {
+        savedTheme = 'dark';
+        localStorage.setItem('viet_travel_theme', 'dark');
+    }
     document.documentElement.setAttribute('data-theme', savedTheme);
     
     elements.themeToggleBtn.addEventListener('click', () => {
@@ -302,19 +306,8 @@ function addBotResponse(data) {
     const msgEl = document.createElement('div');
     msgEl.className = 'message-wrapper bot';
     
-    // Xây dựng huy hiệu các tác tử AI tham gia xử lý
-    let pipelineBadgesHtml = '';
-    if (data.ai_pipeline) {
-        const p = data.ai_pipeline;
-        const usedWeb = p.web_search_agent && p.web_search_agent.used;
-        pipelineBadgesHtml = `
-            <div class="ai-pipeline-badges">
-                <span class="pipeline-badge badge-gemini" title="Tác tử tổng hợp & Hướng dẫn viên"><i class="fa-solid fa-sparkles"></i> Gemini 2.5</span>
-                <span class="pipeline-badge badge-db" title="Tác tử truy xuất dữ liệu nội bộ"><i class="fa-solid fa-database"></i> ${escapeHtml(p.retrieval_agent || 'PostgreSQL POI Engine')}</span>
-                ${usedWeb ? `<span class="pipeline-badge badge-web" title="Tác tử tra cứu Web thời gian thực"><i class="fa-solid fa-earth-americas"></i> Web Real-time (${p.web_search_agent.sources_count || data.web_sources?.length || 0} nguồn)</span>` : ''}
-            </div>
-        `;
-    }
+    // Huy hiệu AI engine đã được gỡ bỏ theo yêu cầu giao diện
+    const pipelineBadgesHtml = '';
 
     // Xây dựng khối nguồn tham khảo từ Web nếu có
     let webSourcesHtml = '';
