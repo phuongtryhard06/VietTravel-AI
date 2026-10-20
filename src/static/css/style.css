@@ -3273,6 +3273,46 @@ body {
     transform: translateX(12px) !important;
 }
 
+/* Light Mode Overrides for Web Search Toggle */
+[data-theme="light"] .web-search-toggle {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #475569 !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05) !important;
+}
+
+[data-theme="light"] .web-search-toggle:hover {
+    background: #f8fafc !important;
+    border-color: #3b82f6 !important;
+    color: #0f172a !important;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15) !important;
+}
+
+[data-theme="light"] .web-search-toggle .toggle-label {
+    color: #475569 !important;
+}
+
+[data-theme="light"] .web-search-toggle:hover .toggle-label {
+    color: #0f172a !important;
+}
+
+[data-theme="light"] .web-search-toggle .toggle-label i {
+    color: #0284c7 !important;
+}
+
+[data-theme="light"] .web-search-toggle .toggle-slider {
+    background: #cbd5e1 !important;
+}
+
+[data-theme="light"] .web-search-toggle input:checked + .toggle-slider {
+    background: #2563eb !important;
+}
+
+[data-theme="light"] .web-search-toggle .toggle-slider::before {
+    background: #ffffff !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
 /* Refined Sidebar Navigation Buttons */
 [data-theme="dark"] .sidebar .nav-item.active,
 .sidebar .nav-item.active {
