@@ -36,3 +36,6 @@ class Config:
     DB_USER = os.getenv('DB_USER')
     DB_PASSWORD = os.getenv('DB_PASSWORD')
     DB_PORT = os.getenv('DB_PORT')
+
+    # Multi-Agent Architecture Feature Flag
+    ENABLE_MULTI_AGENT_COORDINATOR = os.getenv('ENABLE_MULTI_AGENT_COORDINATOR', 'true').lower() in ('true', '1', 'yes')

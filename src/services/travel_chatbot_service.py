@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -5,6 +6,8 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 import os
+import re
+import urllib.parse
 from dotenv import load_dotenv
 load_dotenv()
 import threading
@@ -69,15 +72,17 @@ def _call_gemini_generate_content(
     json_mode: bool = False,
     enable_web_search: bool = False,
     temperature: float = 0.7,
-    max_tokens: int = 4000
+    max_tokens: int = 8192
 ) -> Optional[Dict[str, Any]]:
     if not gemini_key_manager.has_keys():
         return None
 
     # Danh sách các mô hình ổn định và phản hồi nhanh nhất (< 2s)
     model_pool = [
-        "gemini-3-flash-preview",
         "gemini-2.5-flash",
+        "gemini-flash-latest",
+        "gemini-2.5-flash-lite",
+        "gemini-3-flash-preview",
         "gemini-3.5-flash"
     ]
     preferred = os.getenv("GEMINI_MODEL")
@@ -169,7 +174,7 @@ def _call_gemini_generate_content(
         for m in model_pool:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={active_key}"
             try:
-                resp = requests.post(url, json=_build_payload(with_search=False, is_json=json_mode), timeout=25)
+                resp = requests.post(url, json=_build_payload(with_search=False, is_json=json_mode), timeout=50)
                 if resp.status_code == 200:
                     data = resp.json()
                     candidates = data.get("candidates", [])
@@ -185,11 +190,15 @@ def _call_gemini_generate_content(
                                 "grounded": False
                             }
                 elif resp.status_code in (429, 403):
+                    print(f"[Gemini] Key exhausted HTTP {resp.status_code} on {m}")
                     key_exhausted = True
                     break
                 elif resp.status_code == 404:
                     continue
-            except Exception:
+                else:
+                    print(f"[Gemini] {m} returned HTTP {resp.status_code}: {resp.text[:300]}")
+            except Exception as gemini_err:
+                print(f"[Gemini] Request to {m} failed: {gemini_err}")
                 continue
 
         if key_exhausted:
@@ -286,6 +295,7 @@ Trả về JSON format:
     "khu_vuc": "...",
     "diem_xuat_phat": "...",
     "diem_den": "...",
+    "so_nguoi": "...",
     "ngan_sach": "...",
     "thoi_gian": "...",
     "so_thich": "...",
@@ -295,7 +305,8 @@ Trả về JSON format:
 Lưu ý quan trọng:
 - Nếu người dùng nêu điểm xuất phát (nơi ở hiện tại, bắt đầu từ đâu, vd: 'đang ở Phổ Yên', 'từ Hải Phòng', 'ở Cầu Giấy'): ghi vào 'diem_xuat_phat'.
 - Điểm đến du lịch (nơi muốn tới, ghé thăm, vd: 'Lăng Bác', 'Tràng An, Ninh Bình', 'Tam Đảo'): ghi vào 'diem_den' và 'khu_vuc'. TUYỆT ĐỐI không gán điểm xuất phát vào 'khu_vuc'!
-- loai_dia_diem, khu_vuc, diem_xuat_phat, diem_den, ngan_sach, thoi_gian, so_thich, muc_dich là chuỗi ký tự (string). Nếu trường nào không có, để null hoặc bỏ qua."""
+- Nếu người dùng nêu số lượng người đi (vd: '2 người', 'nhóm 4 người', 'gia đình 3 người', 'đi cùng người yêu'): ghi vào 'so_nguoi' (vd: '2 người', '4 người', '1 người').
+- loai_dia_diem, khu_vuc, diem_xuat_phat, diem_den, so_nguoi, ngan_sach, thoi_gian, so_thich, muc_dich là chuỗi ký tự (string). Nếu trường nào không có, để null hoặc bỏ qua."""
             raw_gemini = _call_gemini_generate_content(
                 prompt_text=f"Câu hỏi: {question}",
                 system_instruction=gemini_system,
@@ -372,6 +383,17 @@ Lưu ý quan trọng:
         features['thoi_gian'] = 'cuối tuần'
     elif any(t in q_low for t in ['3 ngày 2 đêm', '3n2d', '2 ngày 1 đêm', '2n1d']):
         features['thoi_gian'] = 'lịch trình nhiều ngày'
+
+    # Số người đi
+    m_p = re.search(r'(\d+)\s*(người|bạn|thành viên|khách|pax|vé)', q_low)
+    if m_p:
+        features['so_nguoi'] = f"{m_p.group(1)} người"
+    elif any(k in q_low for k in ['cặp đôi', '2 người', 'hai người', 'với người yêu', 'với bạn gái']):
+        features['so_nguoi'] = "2 người"
+    elif any(k in q_low for k in ['một mình', '1 người', 'đơn thân', 'độc hành']):
+        features['so_nguoi'] = "1 người"
+    elif 'gia đình' in q_low:
+        features['so_nguoi'] = "gia đình (3-4 người)"
 
     # Đánh dấu cần web search cho các địa điểm ngoài TP.HCM hoặc câu hỏi kinh nghiệm/thời tiết
     needs_web = any(k in q_low for k in ['hà nội', 'đà nẵng', 'sa pa', 'đà lạt', 'giá vé', 'thời tiết', 'kinh nghiệm', 'mới nhất', 'trend', '2026'])
@@ -578,12 +600,181 @@ def get_language_info(language: str) -> Dict[str, str]:
         "unsupported_message": "Sorry, this language is not supported."
     })
 
+def _sanitize_response_images(text: str, search_results: List[Dict[str, Any]], destination_hint: str, hero_image: Optional[str] = None) -> str:
+    """Ensures each markdown image ![Alt](url) in the response uses a unique, authentic image and avoids repetition or inappropriate images."""
+    if not text:
+        return text
+
+    poi_img_map = {}
+    for p in search_results:
+        p_name = p.get("ten_dia_diem")
+        p_img = p.get("image_url")
+        if p_name and p_img:
+            poi_img_map[p_name.lower().strip()] = (p_name, p_img)
+
+    from src.services.ai.image_crawler_agent import image_crawler_agent, remove_accents
+    dest_real_img = hero_image or image_crawler_agent.crawl_destination_hero_image(destination_hint) or image_crawler_agent.crawl_image(destination_hint, "Danh lam thắng cảnh", destination_hint)
+    used_images = set()
+
+    bad_url_keywords = [
+        "panoramio", "bantho", "ban tho", "ban mau", "ban-tho", "altar", "cemetery", 
+        "nghia trang", "nghia-trang", "tomb", "grave", "shrine", "statue", "dien tho", 
+        "chua", "den tho", ".pdf", ".svg", "page1-", "nguyen_trai", "tam phu", "tu phu",
+        "bat huong", "cung le", "thanh mau"
+    ]
+
+    def _replace_img(match):
+        alt = match.group(1).strip()
+        url = match.group(2).strip()
+        u_norm = remove_accents(urllib.parse.unquote(url))
+        a_norm = remove_accents(alt)
+
+        is_bad_url = any(b in u_norm for b in bad_url_keywords)
+
+        # 1. Nếu alt là tổng quan hành trình / điểm đến chính (Phần I)
+        dest_norm = remove_accents(destination_hint)
+        if any(k in a_norm for k in [dest_norm, "tong quan", "toan canh", "thoi diem", "hanh trinh", "cung duong", "diem nhan"]):
+            if dest_real_img and dest_real_img not in used_images:
+                used_images.add(dest_real_img)
+                return f"![Toàn cảnh {destination_hint}]({dest_real_img})"
+
+        # 2. Khớp với POI cụ thể trong lịch trình (ưu tiên ảnh chưa xuất hiện)
+        for k, (real_name, real_url) in poi_img_map.items():
+            k_norm = remove_accents(k)
+            if (k_norm in a_norm or a_norm in k_norm or any(part in a_norm for part in k_norm.split(','))) and real_url not in used_images:
+                used_images.add(real_url)
+                return f"![{real_name}]({real_url})"
+
+        # 3. Nếu URL hiện tại đã là ảnh thật hợp lệ từ POI map và chưa xuất hiện
+        if not is_bad_url and url.startswith("http"):
+            for real_name, real_url in poi_img_map.values():
+                if url == real_url and url not in used_images:
+                    used_images.add(url)
+                    return f"![{alt or real_name}]({url})"
+
+        # 4. Cào riêng ảnh thật độc lập cho chính alt text này
+        if alt:
+            scraped = image_crawler_agent.crawl_image(alt, "", destination_hint)
+            if scraped and scraped not in used_images:
+                s_norm = remove_accents(urllib.parse.unquote(scraped))
+                if not any(b in s_norm for b in bad_url_keywords):
+                    used_images.add(scraped)
+                    return f"![{alt}]({scraped})"
+
+        # 5. Fallback sang ảnh cào thực tế toàn cảnh của điểm đến nếu chưa dùng
+        if dest_real_img and dest_real_img not in used_images:
+            used_images.add(dest_real_img)
+            return f"![Toàn cảnh {destination_hint}]({dest_real_img})"
+
+        # Tránh hiện độc 1 ảnh trùng lặp nhiều lần
+        return ""
+
+    sanitized = re.sub(r'!\[(.*?)\]\((https?://[^\s\)]+)\)', _replace_img, text)
+
+    # Đảm bảo Phần I luôn có ảnh toàn cảnh nếu LLM quên chèn
+    if dest_real_img and dest_real_img not in sanitized:
+        m_part1 = re.search(r'(Phần I[\.:].*?\n)', sanitized, re.IGNORECASE)
+        if m_part1:
+            header_end = m_part1.end()
+            after_header = sanitized[header_end:header_end+200]
+            if "![" not in after_header:
+                sanitized = sanitized[:header_end] + f"\n![Toàn cảnh {destination_hint}]({dest_real_img})\n" + sanitized[header_end:]
+
+    return sanitized
+
+
+def _enrich_response_maps(text: str, search_results: List[Dict[str, Any]], destination_hint: str) -> str:
+    """Ensures each major POI or attraction has an inline Google Maps navigation link if the LLM forgot to add one."""
+    if not text or not search_results:
+        return text
+
+    for p in search_results:
+        name = p.get("ten_dia_diem", "").strip()
+        if not name or len(name) < 3:
+            continue
+        g_url = p.get("google_maps_url")
+        if not g_url:
+            dest_term = destination_hint or p.get("khu_vuc") or ""
+            encoded_term = urllib.parse.quote(f"{name} {dest_term}".strip())
+            g_url = f"https://www.google.com/maps/search/?api=1&query={encoded_term}"
+
+        map_btn = f"[📍 Mở Google Maps dẫn đường]({g_url})"
+
+        # Check if already present in text
+        if g_url in text or f"query={urllib.parse.quote(name)}" in text:
+            continue
+
+        # Try appending below the image of this POI
+        pattern = re.escape(name)
+        img_match = re.search(r'(!\[[^\]]*' + pattern + r'[^\]]*\]\([^\)]+\))', text, re.IGNORECASE)
+        if img_match:
+            matched_str = img_match.group(0)
+            if map_btn not in text:
+                text = text.replace(matched_str, f"{matched_str}\n\n> 🧭 **Định vị:** {map_btn}\n", 1)
+        else:
+            # Try appending right after bold landmark mention
+            bold_match = re.search(r'(\*\*(?:[0-9: \-\.]*)?' + pattern + r'[^\*]*\*\*)', text, re.IGNORECASE)
+            if bold_match and map_btn not in text:
+                matched_str = bold_match.group(0)
+                text = text.replace(matched_str, f"{matched_str} — {map_btn}", 1)
+
+    return text
+
+
+def _sanitize_response_budget(text: str, so_nguoi: Optional[str] = None, question: Optional[str] = None) -> str:
+    """Ensures Section V budget header and estimates accurately reflect the number of travelers asked."""
+    if not text:
+        return text
+
+    target_pax = so_nguoi
+    q_str = (question or "").lower()
+    t_str = text.lower()
+
+    if not target_pax and q_str:
+        m_q = re.search(r'(\d+)\s*(?:người|bạn|thành viên|khách|pax|vé)', q_str)
+        if m_q:
+            target_pax = f"{m_q.group(1)} người"
+        elif any(k in q_str for k in ['cặp đôi', '2 người', 'hai người', 'với người yêu', 'với bạn gái']):
+            target_pax = "2 người"
+        elif any(k in q_str for k in ['một mình', '1 người', 'đơn thân', 'độc hành']):
+            target_pax = "1 người"
+
+    if not target_pax:
+        # Check in generated text body
+        m_t = re.search(r'(?:cho|nhóm)\s+(\d+)\s+người', t_str)
+        if m_t:
+            target_pax = f"{m_t.group(1)} người"
+        elif any(k in t_str for k in ['cho 2 người', 'hai bạn', 'cặp đôi']):
+            target_pax = "2 người"
+
+    if not target_pax:
+        return text
+
+    m_num = re.search(r'(\d+)', str(target_pax))
+    if m_num and int(m_num.group(1)) > 1:
+        n_pax = str(target_pax).strip().upper()
+        # Tránh trùng lặp nếu text đã có tiêu đề đúng
+        if re.search(rf'Phần V\.?\s*BẢNG DỰ TOÁN TỔNG CHI PHÍ TRỌN GÓI\s+CHO\s+{re.escape(n_pax)}', text, re.IGNORECASE):
+            return text
+
+        # Thay thế tiêu đề Phần V nếu LLM quen tay ghi 'CHO 1 NGƯỜI' hoặc '(CHO 1 NGƯỜI)' hoặc thiếu số người
+        text = re.sub(
+            r'((?:#{1,4}\s*|\*\*|)?Phần V\.?\s*BẢNG DỰ TOÁN TỔNG CHI PHÍ TRỌN GÓI)(?:\s*(?:\(CHO\s+\d+\s+NGƯỜI\)|CHO\s+\d+\s+NGƯỜI|\(CHO\s+1\s+NGƯỜI\)|CHO\s+1\s+NGƯỜI))?(\*{0,2})',
+            rf'\1 CHO {n_pax}\2',
+            text,
+            count=1,
+            flags=re.IGNORECASE
+        )
+    return text
+
+
 def generate_natural_response(question: str, search_results: List[Dict], 
                             extracted_features: Dict[str, Any], 
                             language: str = "vietnamese",
                             enable_web_search: Optional[bool] = None) -> Dict[str, Any]:
     """
-    Sinh câu trả lời tự nhiên cho chatbot hướng dẫn viên du lịch
+    Sinh câu trả lời tự nhiên từ kết quả tìm kiếm và các thực thể đã trích xuất
+    Sử dụng Gemini API trước, nếu lỗi sẽ tự động fallback sang OpenAI API
     
     Args:
         question (str): Câu hỏi của người dùng
@@ -617,6 +808,54 @@ def generate_natural_response(question: str, search_results: List[Dict],
             "language": language,
             "language_name": lang_info["name"]
         }
+
+        # Xây dựng danh sách ảnh thực tế của chính các POI được tìm thấy
+        from src.services.ai.image_crawler_agent import image_crawler_agent
+        target_destination = extracted_features.get("diem_den") or extracted_features.get("khu_vuc") or ""
+        so_nguoi_val = extracted_features.get("so_nguoi")
+        if not so_nguoi_val:
+            m_p = re.search(r'(\d+)\s*(người|bạn|thành viên|khách|pax|vé)', question.lower())
+            if m_p:
+                so_nguoi_val = f"{m_p.group(1)} người"
+            elif any(k in question.lower() for k in ['cặp đôi', '2 người', 'hai người', 'với người yêu', 'với bạn gái']):
+                so_nguoi_val = "2 người"
+            elif any(k in question.lower() for k in ['một mình', '1 người', 'đơn thân', 'độc hành']):
+                so_nguoi_val = "1 người"
+            elif 'gia đình' in question.lower():
+                so_nguoi_val = "gia đình (3-4 người)"
+        
+        # Nếu danh sách POI quá ít, tự động kích hoạt Tác tử Khám phá Điểm đến để nạp đủ các điểm biểu tượng kèm ảnh & tọa độ GPS
+        if len(search_results) < 4 and target_destination:
+            try:
+                extra_pois = discover_dynamic_pois_agent(target_destination, target_destination, question, limit=6)
+                existing_names = {p.get("ten_dia_diem", "").lower() for p in search_results}
+                for ep in extra_pois:
+                    if ep.get("ten_dia_diem", "").lower() not in existing_names:
+                        search_results.append(ep)
+                        existing_names.add(ep.get("ten_dia_diem", "").lower())
+            except Exception as e:
+                print(f"Auto-enrich POIs failed: {e}")
+
+        # Tác tử Cào Ảnh Thực Tế (Image Crawler Agent): Cào trước ảnh danh thắng toàn cảnh & từng POI
+        dest_hero_img = ""
+        if target_destination:
+            dest_hero_img = image_crawler_agent.crawl_destination_hero_image(target_destination) or image_crawler_agent.crawl_image(target_destination, "Danh lam thắng cảnh", target_destination)
+
+        poi_image_bullets = []
+        if dest_hero_img:
+            poi_image_bullets.append(f"     * Toàn cảnh {target_destination} (BẮT BUỘC DÙNG CHO PHẦN I): ![{target_destination}]({dest_hero_img})")
+
+        for p in search_results:
+            p_name = p.get("ten_dia_diem")
+            p_img = p.get("image_url")
+            # Nếu POI chưa có ảnh thật, tác tử cào ảnh cào ngay
+            if (not p_img or any(bad in p_img.lower() for bad in ["panoramio", "bantho", "altar", ".pdf"])) and p_name:
+                p_img = image_crawler_agent.crawl_image(p_name, p.get("loai_dia_diem", ""), target_destination)
+                p["image_url"] = p_img
+            if p_name and p_img:
+                poi_image_bullets.append(f"     * {p_name} (Dùng cho chặng tương ứng trong Phần IV): ![{p_name}]({p_img})")
+
+        dynamic_poi_images = "\n".join(poi_image_bullets) if poi_image_bullets else "     * (Hãy dùng các URL ảnh thực tế từ danh sách địa điểm đã cung cấp ở trên)"
         
         # Tạo prompt dựa trên ngôn ngữ
         if language == "vietnamese":
@@ -628,51 +867,62 @@ NGUYÊN TẮC BẮT BUỘC CỦA TÁC TỬ:
    - Cấm đưa ra các lời khuyên lý thuyết sáo rỗng (như 'hãy chọn quán có không gian yên tĩnh', 'chọn điểm đến phù hợp sở thích').
    - Mọi thông tin phải là NGƯỜI THẬT, VIỆC THẬT: Tên quán ăn cụ thể, món ăn signature, địa chỉ rõ ràng, giá tiền tham khảo, phương tiện và cung đường đi.
 
-2. BẮT BUỘC CHÈN ẢNH MINH HỌA TRỰC QUAN TRONG BÀI VIẾT (NHƯ TẠP CHÍ LỮ HÀNH CAO CẤP):
-   - Khi giới thiệu các điểm đến tiêu biểu hoặc trong các chặng của lịch trình, BẮT BUỘC chèn ảnh minh họa chất lượng cao bằng cú pháp Markdown:
-     `![Tên địa điểm](URL_ẢNH)`
-     ngay bên dưới tiêu đề hoặc đoạn mở đầu của điểm đến đó để người xem thấy trực quan sinh động (như review du lịch chuyên nghiệp giống cẩm nang du lịch).
-   - Danh mục URL ảnh Unsplash thực tế chuẩn cho các điểm du lịch lớn:
-     * Cát Bà: ![Đảo Cát Bà](https://images.unsplash.com/photo-1598971861713-54ad16a7e72e?w=800&auto=format&fit=crop)
-     * Vịnh Lan Hạ: ![Vịnh Lan Hạ](https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop)
-     * Bãi tắm Cát Cò: ![Bãi tắm Cát Cò](https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop)
-     * Vườn Quốc Gia Cát Bà: ![Vườn Quốc Gia Cát Bà](https://images.unsplash.com/photo-1448375240586-882707db888b?w=800&auto=format&fit=crop)
-     * Vũng Tàu - Bãi Sau: ![Bãi Sau Vũng Tàu](https://images.unsplash.com/photo-1519046904884-53103b34b206?w=800&auto=format&fit=crop)
-     * Vũng Tàu - Tượng Chúa Kytô Vua: ![Tượng Chúa Kytô Vua](https://images.unsplash.com/photo-1544644181-1484b3fdfc62?w=800&auto=format&fit=crop)
-     * Vũng Tàu - Mũi Nghinh Phong: ![Mũi Nghinh Phong](https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop)
-     * Vũng Tàu - Ngọn Hải Đăng: ![Ngọn Hải Đăng Vũng Tàu](https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=800&auto=format&fit=crop)
-     * Vũng Tàu - Bạch Dinh: ![Bạch Dinh Vũng Tàu](https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?w=800&auto=format&fit=crop)
-     * Hà Nội - Lăng Bác: ![Lăng Chủ tịch Hồ Chí Minh](https://images.unsplash.com/photo-1528181304800-259b08848526?w=800&auto=format&fit=crop)
-     * Hà Nội - Hồ Hoàn Kiếm / Phố Cổ: ![Hồ Hoàn Kiếm](https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&auto=format&fit=crop)
-     * Thái Nguyên - Hồ Núi Cốc: ![Hồ Núi Cốc](https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop)
-     * Thái Nguyên - Đồi chè Tân Cương: ![Đồi chè Tân Cương](https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=800&auto=format&fit=crop)
-     * Đà Nẵng - Bà Nà Hills: ![Bà Nà Hills](https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&auto=format&fit=crop)
-     * Hội An: ![Phố Cổ Hội An](https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&auto=format&fit=crop)
-     * Đà Lạt: ![Đà Lạt](https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?w=800&auto=format&fit=crop)
-     * Phú Quốc: ![Phú Quốc](https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=800&auto=format&fit=crop)
-     * Ninh Bình: ![Tràng An Ninh Bình](https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop)
-     * Sa Pa: ![Sa Pa](https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop)
-     *(Nếu là địa điểm khác, hãy dùng link ảnh Unsplash du lịch chất lượng cao tương thích).*
+2. BẮT BUỘC CHÈN ẢNH MINH HỌA THỰC TẾ & ĐA DẠNG (DO TÁC TỬ CÀO ẢNH CUNG CẤP):
+   - Ở Phần I (TỔNG QUAN HÀNH TRÌNH & THỜI ĐIỂM ĐẸP NHẤT):
+     BẮT BUỘC chèn ảnh toàn cảnh danh thắng của điểm đến ngay bên dưới tiêu đề Phần I:
+     `![Toàn cảnh """ + target_destination + """](""" + dest_hero_img + """)`
+     để mở đầu hành trình với hình ảnh chân thực, sống động nhất.
+   - Ở Phần IV (LỊCH TRÌNH CHI TIẾT TỪNG NGÀY):
+     Mỗi chặng/ngày chỉ chèn ĐÚNG ảnh của điểm đến đó từ danh mục do Tác tử cào ảnh đã thu thập:
+     `![Tên điểm đến](URL_ẢNH_TƯƠNG_ỨNG)`
+   - TUYỆT ĐỐI KHÔNG lấy 1 ảnh duy nhất paste vào tất cả các ngày/điểm đến.
+   - TUYỆT ĐỐI KHÔNG TỰ BỊA URL ẢNH. BẮT BUỘC DÙNG ĐÚNG CÁC ẢNH THẬT ĐÃ CÀO BÊN DƯỚI:
+""" + dynamic_poi_images + """
 
-3. QUY CHUẨN TƯ VẤN LỊCH TRÌNH CHUYÊN SÂU (VD: 3 ngày 2 đêm, 2 ngày 1 đêm, hoặc tour nhiều ngày):
+3. BẮT BUỘC TÍCH HỢP LINK BẢN ĐỒ GOOGLE MAPS DẪN ĐƯỜNG TRỰC TIẾP:
+   - Tại mỗi điểm tham quan, khách sạn hoặc quán ăn trong lịch trình, BẮT BUỘC chèn kèm link Google Maps dẫn đường trực tiếp:
+     `[📍 Mở Google Maps dẫn đường](https://www.google.com/maps/search/?api=1&query=TÊN_ĐIỂM+KHU_VỰC)`
+     (Ví dụ: `[📍 Mở Google Maps dẫn đường](https://www.google.com/maps/search/?api=1&query=Cột+cờ+Lũng+Cú+Hà+Giang)`)
+     ngay bên cạnh hoặc dưới tên/địa chỉ để khách bấm vào là mở Google Maps dẫn đường trên điện thoại ngay lập tức!
+
+4. QUY CHUẨN TƯ VẤN LỊCH TRÌNH CHUYÊN SÂU:
    - Phải viết THẬT DÀI, CHI TIẾT TỪNG BƯỚC, KHÔNG CẮT XÉN, KHÔNG TÓM TẮT.
    - Cấu trúc đầy đủ gồm 5 phần:
      Phần I. TỔNG QUAN HÀNH TRÌNH & THỜI ĐIỂM ĐẸP NHẤT
-     Phần II. LỘ TRÌNH DI CHUYỂN & PHƯƠNG TIỆN (Chỉ rõ cao tốc/quốc lộ nào, thời gian đi, phương tiện xe khách/limousine/xe máy/ô tô, điểm dừng chân ăn sáng và giá tiền).
-     Phần III. GỢI Ý NƠI LƯU TRÚ (Khách sạn/homestay uy tín, khu vực nên thuê, mức giá phòng/đêm).
+     Phần II. LỘ TRÌNH DI CHUYỂN & PHƯƠNG TIỆN (Chỉ rõ cao tốc/quốc lộ nào, thời gian đi, phương tiện, điểm dừng chân).
+     Phần III. GỢI Ý NƠI LƯU TRÚ (Khách sạn/homestay uy tín kèm link bản đồ Google Maps và mức giá).
      Phần IV. LỊCH TRÌNH CHI TIẾT TỪNG NGÀY:
        - Tách bạch rõ ràng từng ngày (Ngày 1, Ngày 2, Ngày 3...).
-       - Mỗi ngày chia đủ 4 khung thời gian:
-         * 🌅 **Sáng (07:00 - 11:30)**: Ăn sáng món gì, tên quán, địa chỉ, giá. Điểm tham quan buổi sáng (có chèn ảnh minh họa `![Tên](url)`), đường đi, hoạt động, giá vé.
-         * ☀️ **Trưa (11:30 - 14:00)**: Quán ăn trưa đặc sản, món ngon nổi bật, chi phí. Thời gian nghỉ trưa.
-         * 🌇 **Chiều (14:30 - 18:00)**: Điểm vui chơi / bãi biển / ngắm hoàng hôn (có chèn ảnh), trải nghiệm đặc sắc, góc check-in đẹp.
-         * 🌙 **Tối (18:30 - 22:30)**: Quán ăn tối hải sản/lẩu/nướng (tên quán, địa chỉ, giá), dạo chợ đêm hoặc cafe view đẹp.
-     Phần V. BẢNG DỰ TOÁN TỔNG CHI PHÍ TRỌN GÓI CHO 1 NGƯỜI (Ghi rõ từng mục: Di chuyển, Khách sạn, Ăn uống, Vé tham quan, Phát sinh và Tổng cộng).
+       - Mỗi ngày chia đủ 4 khung thời gian chi tiết:
+         * **Sáng (07:00 - 11:30)**: Ăn sáng món gì, tên quán, địa chỉ, giá. Điểm tham quan buổi sáng (có chèn ảnh minh họa `![Tên](url)` và link `[📍 Mở Google Maps dẫn đường](...)`).
+         * **Trưa (11:30 - 14:00)**: Quán ăn trưa đặc sản, món ngon nổi bật, chi phí. Thời gian nghỉ trưa.
+         * **Chiều (14:30 - 18:00)**: Điểm vui chơi / bãi biển / ngắm hoàng hôn / trải nghiệm đặc sắc (có chèn ảnh minh họa `![Tên](url)` và link `[📍 Mở Google Maps dẫn đường](...)`), trải nghiệm văn hóa.
+         * **Tối (18:30 - 22:30)**: Quán ăn tối hải sản/lẩu/nướng/đặc sản (tên quán, địa chỉ, giá), dạo chợ đêm hoặc cafe phố cổ thư giãn ngắm cảnh.
+       - Tại mỗi mốc giờ cụ thể: Tên điểm/quán, địa chỉ rõ ràng, cung đường đi, hoạt động, giá vé/giá món, ảnh minh họa `![Tên](url)` tương ứng và link `[📍 Mở Google Maps dẫn đường](...)`.
 
-4. QUY TẮC ĐỊNH DẠNG VĂN BẢN:
+     Phần V. BẢNG DỰ TOÁN TỔNG CHI PHÍ TRỌN GÓI (TỰ ĐỘNG TÍNH TOÁN THEO ĐÚNG SỐ LƯỢNG NGƯỜI ĐI):
+       - QUY TẮC BẮT BUỘC TÍNH THEO SỐ LƯỢNG NGƯỜI:
+         * Hãy phân tích kỹ câu hỏi của khách xem họ đi bao nhiêu người (Ví dụ: 1 người, 2 người (cặp đôi/vợ chồng), 3 người, 4 người (nhóm/gia đình), 5 người, 10 người...).
+         * NẾU KHÁCH CÓ NÊU SỐ NGƯỜI (hoặc có số người N trong câu hỏi hay thực thể 'so_nguoi'):
+           + Đặt tiêu đề rõ ràng: `Phần V. BẢNG DỰ TOÁN TỔNG CHI PHÍ TRỌN GÓI CHO {N} NGƯỜI` (hoặc đúng số lượng khách hỏi).
+           + BẮT BUỘC tính toán chi tiết từng khoản mục theo ĐÚNG {N} người:
+             - 🚗 Di chuyển: Vé xe khách/máy bay khứ hồi (đơn giá × {N}), thuê xe máy/xe ô tô (tính số lượng xe phù hợp cho {N} người, ví dụ 2 người thuê 1 xe máy, 4 người thuê 2 xe máy hoặc 1 ô tô).
+             - 🏨 Lưu trú: Tiền phòng khách sạn/homestay tính theo số phòng phù hợp cho {N} người (ví dụ: 2 người ở 1 phòng đôi; 4 người thuê 2 phòng đôi hoặc phòng gia đình, chia sẻ chi phí).
+             - 🍜 Ăn uống: Ăn sáng, trưa, tối (đơn giá × {N} người × số ngày).
+             - 🎟️ Vé tham quan & Trải nghiệm: Vé thắng cảnh, thuyền sông, xe điện (đơn giá × {N} người).
+             - 🛍️ Chi phí dự phòng / phát sinh ({N} người).
+             - 💰 **TỔNG CỘNG CHO CẢ ĐOÀN ({N} NGƯỜI)**: ... VNĐ
+             - 💵 **BÌNH QUÂN / 1 NGƯỜI**: ... VNĐ/người (giúp khách dễ thấy chi phí thực tế cho mỗi cá nhân).
+         * NẾU KHÁCH KHÔNG NÊU RÕ SỐ LƯỢNG NGƯỜI:
+           + Tiêu đề: `Phần V. BẢNG DỰ TOÁN TỔNG CHI PHÍ TRỌN GÓI (CHO 1 NGƯỜI)`
+           + Lập bảng chi tiết cho 1 người.
+           + Kèm thêm một bảng so sánh nhanh hoặc ghi chú: Ước tính tổng chi phí nếu đi 2 người hoặc nhóm 4 người (nhấn mạnh chi phí sẽ rẻ hơn trên mỗi người nhờ share tiền phòng khách sạn và thuê xe).
+
+5. QUY TẮC ĐỊNH DẠNG VĂN BẢN:
    - TUYỆT ĐỐI KHÔNG xuất hiện dấu thăng đơn lẻ đứng một mình (như '#') trên một dòng riêng.
-   - TUYỆT ĐỐI KHÔNG xuất hiện dòng gạch ngang trần '---'.
-   - KHÔNG tự chèn các chuỗi thô '[ 📍 Bản đồ](...) | [+ Thêm vào lịch]' vào text."""
+   - TUYỆT ĐỐI KHÔNG xuất hiện dòng gạch ngang trần '---'."""
+
+            pax_rule = f"3. Ở Phần V (BẢNG DỰ TOÁN TỔNG CHI PHÍ): Khách hàng yêu cầu chuyến đi cho {so_nguoi_val.upper()}! Tiêu đề Phần V BẮT BUỘC PHẢI LÀ 'Phần V. BẢNG DỰ TOÁN TỔNG CHI PHÍ TRỌN GÓI CHO {so_nguoi_val.upper()}' (TUYỆT ĐỐI CẤM ghi 'CHO 1 NGƯỜI'). Bắt buộc tính toán chi phí di chuyển, ăn uống, vé theo đúng {so_nguoi_val}, tiền phòng chia sẻ cho {so_nguoi_val}, và ghi rõ 'TỔNG CỘNG CHO {so_nguoi_val.upper()}' lẫn 'BÌNH QUÂN / 1 NGƯỜI'!" if so_nguoi_val else f"3. Ở Phần V: Hãy phân tích kỹ số lượng người trong yêu cầu '{question}'. Nếu khách đi 1, 2, 3, 4... người thì BẮT BUỘC phải tính toán bảng chi phí tổng cho đúng 1, 2, 3, 4... người đó (tiền ăn và vé nhân theo số người, tiền phòng và thuê xe tính theo số phòng/xe phù hợp) và ghi rõ tổng tiền cả nhóm lẫn tiền bình quân / 1 người!"
 
             user_prompt = f"""Yêu cầu chuyến đi của khách: {question}
 
@@ -682,7 +932,10 @@ Thông tin phân tích từ Intent Agent:
 Dữ liệu địa điểm thực tế từ POI Engine ({len(search_results)} điểm):
 {json.dumps(search_results, ensure_ascii=False, indent=2)}
 
-QUAN TRỌNG: Hãy phân tích ĐÍCH DANH các địa điểm trên, chèn hình ảnh minh họa Markdown ![Tên](url), cung cấp thông tin chi tiết từng mốc giờ (Sáng, Trưa, Chiều, Tối), tên quán ăn, địa chỉ, giá cả, cách đi để khách có thể thực hiện chuyến đi trọn vẹn ngay lập tức!"""
+QUAN TRỌNG:
+1. Hãy phân tích ĐÍCH DANH các địa điểm trên, chèn hình ảnh minh họa Markdown ![Tên](url) RIÊNG BIỆT cho từng điểm (tuyệt đối không lặp lại 1 ảnh cho nhiều điểm), kèm link [📍 Mở Google Maps dẫn đường](...) cho từng điểm tham quan và quán ăn để du khách dễ dàng định vị!
+2. Ở Phần IV: Phải chia đủ 4 khung thời gian chi tiết (Sáng, Trưa, Chiều, Tối) cho từng ngày theo đúng quy chuẩn!
+{pax_rule}"""
 
         elif language == "english":
             system_prompt = """You are VietTravel AI - Smart Travel Itinerary & Booking Agent.
@@ -816,10 +1069,13 @@ IMPORTANT: Respond as a Smart Travel Booking & Itinerary Agent in English with s
                 json_mode=False,
                 enable_web_search=should_web_search,
                 temperature=0.7,
-                max_tokens=4000
+                max_tokens=8192
             )
             if gemini_result and gemini_result.get("text"):
                 gemini_answer = gemini_result["text"]
+                gemini_answer = _sanitize_response_images(gemini_answer, search_results, target_destination, hero_image=dest_hero_img)
+                gemini_answer = _enrich_response_maps(gemini_answer, search_results, target_destination)
+                gemini_answer = _sanitize_response_budget(gemini_answer, so_nguoi_val, question)
                 print("Gemini API call successful")
                 print(f"Generated response length: {len(gemini_answer)}")
                 return {
@@ -849,6 +1105,9 @@ IMPORTANT: Respond as a Smart Travel Booking & Itinerary Agent in English with s
         
         print("OpenAI API call successful")
         natural_response = response.choices[0].message.content
+        natural_response = _sanitize_response_images(natural_response, search_results, target_destination, hero_image=dest_hero_img)
+        natural_response = _enrich_response_maps(natural_response, search_results, target_destination)
+        natural_response = _sanitize_response_budget(natural_response, so_nguoi_val, question)
         print(f"Generated response length: {len(natural_response)}")
         
         return {
@@ -860,6 +1119,7 @@ IMPORTANT: Respond as a Smart Travel Booking & Itinerary Agent in English with s
         }
         
     except Exception as e:
+        import traceback; traceback.print_exc()
         error_text = str(e).lower()
         error_code = "provider_unavailable"
         if any(token in error_text for token in ("insufficient_quota", "no credits", "quota", "billing", "credit balance")):
@@ -1013,138 +1273,43 @@ def generate_follow_up_questions(language: str, features: Dict[str, Any]) -> Lis
 
 def _get_curated_image_and_meta(name: str, category: str, fclass: str, region: str):
     """
-    Tự động chuẩn hóa ảnh đại diện thực tế, giờ mở cửa, giá vé và mô tả sinh động cho từng địa điểm.
+    Tự động chuẩn hóa ảnh đại diện thực tế (cào trực tiếp từ mạng qua ImageCrawlerAgent),
+    giờ mở cửa, giá vé và mô tả sinh động cho từng địa điểm.
     """
+    from src.services.ai.image_crawler_agent import image_crawler_agent
+
+    # 100% Cào ảnh thực tế động qua ImageCrawlerAgent (không dùng link tĩnh)
+    img = image_crawler_agent.crawl_image(name, category, region)
+
+    # Gợi ý thông tin giờ mở cửa, giá cả và đánh giá theo loại hình
     name_lower = (name or "").lower()
     cat_lower = f"{category or ''} {fclass or ''}".lower()
-    reg_lower = (region or "").lower()
 
-    if any(k in name_lower for k in ["tượng chúa", "chúa kytô", "chúa kito", "núi nhỏ"]):
-        img = "https://images.unsplash.com/photo-1596422846543-75c6fc197f07?w=800&auto=format&fit=crop"
-        hours = "07:00 - 17:00 (Hàng ngày)"
-        price = "Miễn phí (Trang phục lịch sự qua gối)"
-        rating = 4.9
-        desc = f"{name} là bức tượng Chúa Kitô Vua lớn nhất châu Á ngự trên đỉnh Núi Nhỏ, cao 32m với hai tay dang rộng 18.3m, bên trong có 133 bậc thang xoắn ốc dẫn lên hai vai ngắm trọn vẹn biển Vũng Tàu."
-    elif any(k in name_lower for k in ["mũi nghinh phong", "cổng trời"]):
-        img = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop"
-        hours = "Cả ngày (Khuyên đi: 05:30 - 18:30)"
-        price = "Miễn phí vào cổng"
+    if any(k in name_lower or k in cat_lower for k in ["nhà hàng", "restaurant", "quán ăn", "ẩm thực", "bánh", "lẩu", "cháo", "phở", "bún", "cơm"]):
+        hours = "07:00 - 22:30"
+        price = "35.000đ - 150.000đ/người"
         rating = 4.8
-        desc = f"{name} là mũi đất vươn dài đón gió biển bốn mùa, sở hữu 'Cổng Trời' độc đáo view ôm trọn biển xanh biếc và là điểm ngắm hoàng hôn, bình minh đắt giá nhất Vũng Tàu."
-    elif any(k in name_lower for k in ["hải đăng", "ngọn hải đăng"]):
-        img = "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=800&auto=format&fit=crop"
-        hours = "07:00 - 22:00"
-        price = "Miễn phí tham quan"
-        rating = 4.7
-        desc = f"{name} được xây dựng từ năm 1862, là một trong những ngọn hải đăng cổ xưa nhất Đông Nam Á, cung đường uốn lượn rợp bóng hoa giấy và view ngắm trọn vịnh Gành Rái."
-    elif any(k in name_lower for k in ["bánh khọt", "gốc vú sữa", "cô ba vũng tàu"]):
-        img = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop"
-        hours = "07:00 - 22:00"
-        price = "60.000đ - 120.000đ/phần"
+        desc = f"{name} là điểm dừng chân ẩm thực đặc sắc tại {region}, nổi tiếng với hương vị đặc trưng truyền thống và sự đón tiếp nhiệt tình."
+    elif any(k in name_lower or k in cat_lower for k in ["homestay", "hotel", "khách sạn", "nhà nghỉ", "resort", "village"]):
+        hours = "Nhận phòng 14:00 - Trả phòng 12:00"
+        price = "250.000đ - 600.000đ/đêm"
         rating = 4.8
-        desc = f"{name} phục vụ món bánh khọt tôm vàng giòn rụm nức tiếng, ăn kèm đu đủ bào sợi chua ngọt, đĩa rau sống tươi sạch và nước mắm ớt pha gia truyền đậm đà."
-    elif any(k in name_lower for k in ["lẩu cá đuối", "cá đuối"]):
-        img = "https://images.unsplash.com/photo-1544025162-d76694265947?w=800&auto=format&fit=crop"
-        hours = "10:00 - 23:00"
-        price = "150.000đ - 250.000đ/nồi"
-        rating = 4.8
-        desc = f"{name} nổi tiếng với nồi lẩu cá đuối măng chua sôi sùng sục, thịt cá đuối tươi ngọt giòn sụn chấm nước mắm ớt nguyên chất, hương vị chua cay hấp dẫn khó cưỡng."
-    elif any(k in name_lower for k in ["vịnh lan hạ", "cát bà", "đảo khỉ"]):
-        img = "https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop"
-        hours = "07:00 - 17:30"
-        price = "Tour thuyền 250.000đ - 450.000đ"
-        rating = 4.9
-        desc = f"{name} là kỳ quan vịnh ngọc với hơn 400 hòn đảo đá vôi kỳ vĩ phủ kín thảm thực vật xanh mướt, nước biển trong vắt lý tưởng để chèo thuyền kayak và lặn ngắm san hô."
-    elif any(k in name_lower for k in ["núi cốc", "hồ núi cốc", "tân cương"]):
-        img = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop"
-        hours = "07:00 - 18:00"
-        price = "130.000đ/vé trọn gói"
-        rating = 4.8
-        desc = f"{name} là danh thắng huyền thoại nổi tiếng đất chè Thái Nguyên với mặt hồ mênh mông, 89 hòn đảo thơ mộng và những đồi chè Tân Cương xanh ngát chân trời."
-    elif any(k in name_lower for k in ["bà nà", "cầu vàng", "golden bridge"]):
-        img = "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&auto=format&fit=crop"
-        hours = "07:00 - 21:00"
-        price = "Cáp treo từ 850.000đ/vé"
-        rating = 4.9
-        desc = f"{name} là kiệt tác kiến trúc nổi tiếng thế giới với đôi bàn tay Phật khổng lồ nâng đỡ dải lụa vàng giữa mây trời Bà Nà, tạo nên trải nghiệm bồng lai tiên cảnh."
-    elif any(k in name_lower for k in ["cầu rồng", "sông hàn"]):
-        img = "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&auto=format&fit=crop"
-        hours = "Cả ngày (Phun lửa & nước: 21:00 T7, CN)"
-        price = "Miễn phí"
-        rating = 4.8
-        desc = f"{name} là biểu tượng kiến trúc hiện đại của Đà Nẵng bắc qua sông Hàn thơ mộng, thu hút hàng vạn du khách chiêm ngưỡng màn phun lửa, phun nước sống động cuối tuần."
-    elif any(k in name_lower for k in ["phố cổ hội an", "chùa cầu"]):
-        img = "https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?w=800&auto=format&fit=crop"
-        hours = "Cả ngày"
-        price = "Vé tham quan phố cổ 80.000đ"
-        rating = 4.9
-        desc = f"{name} là di sản văn hóa thế giới UNESCO với những dãy nhà cổ sơn vàng, hoa giấy rực rỡ và dòng sông Hoài lung linh hoa đăng huyền ảo mỗi khi đêm về."
-    elif any(k in name_lower for k in ["hồ xuân hương", "đà lạt", "lâm viên"]):
-        img = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop"
-        hours = "Cả ngày"
-        price = "Miễn phí"
-        rating = 4.8
-        desc = f"{name} là trái tim thơ mộng của xứ sở sương mù Đà Lạt, nơi lý tưởng để đi dạo, đạp vịt ngắm hoàng hôn buông xuống mặt hồ phẳng lặng trong tiết trời se lạnh."
-    elif any(k in name_lower for k in ["tràng an", "tam cốc", "hang múa"]):
-        img = "https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop"
-        hours = "07:00 - 17:00"
-        price = "Vé thuyền 250.000đ"
-        rating = 4.9
-        desc = f"{name} là danh thắng kỳ vĩ của Ninh Bình được UNESCO công nhận là di sản kép, nơi du khách ngồi thuyền nan len lỏi qua các hang động đá vôi triệu năm tuổi."
-    elif any(k in name_lower for k in ["bảo tàng vũ khí", "robert taylor"]):
-        img = "https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?w=800&auto=format&fit=crop"
-        hours = "08:00 - 17:00 (Hàng ngày)"
-        price = "70.000đ - 100.000đ/vé"
-        rating = 4.8
-        desc = f"{name} là bảo tàng vũ khí cổ tư nhân lớn nhất Việt Nam với hơn 2.500 hiện vật cổ vật từ gươm giáo, súng ống đến quân phục quân đội các nước thời kỳ cổ trung đại."
-    elif any(k in name_lower for k in ["đài liệt sĩ", "liệt sĩ", "tượng đài", "monument", "memorial"]):
-        img = "https://images.unsplash.com/photo-1544644181-1484b3fdfc62?w=800&auto=format&fit=crop"
+        desc = f"{name} mang lại không gian lưu trú ấm cúng, đậm bản sắc địa phương với tầm nhìn tuyệt đẹp tại {region}."
+    elif any(k in name_lower or k in cat_lower for k in ["thuê xe", "xe máy", "rental", "xe ô tô", "giang sơn"]):
         hours = "06:00 - 22:00"
-        price = "Miễn phí tham quan"
-        rating = 4.6
-        desc = f"{name} là công trình tưởng niệm lịch sử trang nghiêm, sở hữu khuôn viên rộng rãi, cây xanh thoáng mát và là biểu tượng tri ân ý nghĩa tại {region}."
-    elif any(k in name_lower for k in ["sculpture", "điêu khắc", "art", "nghệ thuật", "park", "công viên"]):
-        img = "https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=800&auto=format&fit=crop"
-        hours = "Mở cửa cả ngày (24/7)"
-        price = "Miễn phí vào cổng"
-        rating = 4.5
-        desc = f"{name} là không gian nghệ thuật ngoài trời kết hợp công viên xanh, điểm dừng chân lý tưởng để đi dạo ngắm cảnh, thư giãn và chụp ảnh check-in tại {region}."
-    elif any(k in name_lower for k in ["đường sách", "thư viện", "sách"]):
-        img = "https://images.unsplash.com/photo-1507842229452-779836376822?w=800&auto=format&fit=crop"
-        hours = "08:00 - 22:00"
-        price = "Miễn phí vào cửa"
-        rating = 4.7
-        desc = f"{name} là không gian văn hóa đọc nổi tiếng với các gian hàng sách phong phú, cà phê sách rợp bóng cây và thường xuyên tổ chức sự kiện văn hóa nghệ thuật tại {region}."
-    elif any(k in name_lower or k in cat_lower for k in ["nhà hàng", "restaurant", "quán ăn", "ẩm thực", "mr. park", "hải sản"]):
-        img = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop"
-        hours = "10:00 - 22:30"
-        price = "80.000đ - 250.000đ/người"
-        rating = 4.6
-        desc = f"{name} là điểm dừng chân ẩm thực uy tín tại {region}, nổi tiếng với thực đơn đa dạng, hải sản tươi sống và không gian thưởng thức ẩm thực ấm cúng."
-    elif any(k in name_lower or k in cat_lower for k in ["cafe", "cà phê", "coffee", "trà"]):
-        img = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=800&auto=format&fit=crop"
-        hours = "07:00 - 23:00"
-        price = "35.000đ - 65.000đ"
-        rating = 4.7
-        desc = f"{name} là quán cà phê có phong cách thiết kế ấn tượng, không gian thoáng đãng và đồ uống thơm ngon phù hợp nghỉ ngơi, trò chuyện tại {region}."
-    elif any(k in name_lower or k in cat_lower for k in ["bãi biển", "bãi sau", "bãi trước", "beach", "biển"]):
-        img = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop"
-        hours = "Tắm biển: 05:30 - 18:00"
-        price = "Tắm biển miễn phí"
-        rating = 4.8
-        desc = f"{name} nổi bật với bờ biển thoai thoải, dải cát mịn, sóng êm và tập trung nhiều hoạt động thể thao biển hấp dẫn hàng đầu tại {region}."
-    elif any(k in name_lower or k in cat_lower for k in ["lăng bác", "chùa", "đền", "miếu", "di tích"]):
-        img = "https://images.unsplash.com/photo-1528181304800-259b08848526?w=800&auto=format&fit=crop"
-        hours = "07:30 - 17:30"
-        price = "Miễn phí hoặc theo quy định di tích"
+        price = "150.000đ - 250.000đ/ngày"
         rating = 4.9
-        desc = f"{name} là công trình tâm linh - lịch sử thiêng liêng và danh thắng tiêu biểu tại {region}, lưu giữ nét đẹp văn hóa và kiến trúc cổ truyền."
+        desc = f"{name} cung cấp dịch vụ thuê xe uy tín tại {region}, xe được bảo dưỡng kỹ càng, trang bị đầy đủ bảo hộ cho hành trình an toàn."
+    elif any(k in name_lower or k in cat_lower for k in ["cafe", "cà phê", "coffee", "trà"]):
+        hours = "07:00 - 23:00"
+        price = "30.000đ - 65.000đ"
+        rating = 4.7
+        desc = f"{name} là không gian thưởng thức đồ uống ấn tượng, view đẹp để ngắm cảnh và thư giãn tại {region}."
     else:
-        img = "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&auto=format&fit=crop"
-        hours = "07:30 - 21:00"
-        price = "Miễn phí hoặc vé cổng theo mùa"
-        rating = 4.5
-        desc = f"{name} là điểm tham quan hấp dẫn tại {region}, sở hữu vị trí thuận lợi và tọa độ GPS định vị chuẩn xác để bạn thêm vào lịch trình khám phá."
+        hours = "07:00 - 18:00 (Hàng ngày)"
+        price = "Miễn phí hoặc vé tham quan theo mùa"
+        rating = 4.8
+        desc = f"{name} là điểm tham quan hấp dẫn hàng đầu tại {region}, sở hữu cảnh quan thiên nhiên và trải nghiệm không thể bỏ qua."
 
     return img, hours, price, rating, desc
 
@@ -1402,6 +1567,33 @@ def search_pois_from_postgresql(question: str, extracted_features: Dict[str, Any
         "mù cang chải": (21.8542, 104.0889, 15.0, "Yên Bái"),
         "điện biên": (21.3857, 103.0177, 15.0, "Điện Biên"),
         "lai châu": (22.3964, 103.4686, 15.0, "Lai Châu"),
+
+        # --- ĐÔNG BẮC & CAO NGUYÊN ĐÁ ---
+        "hà giang": (22.8233, 104.9839, 25.0, "Hà Giang"),
+        "ha giang": (22.8233, 104.9839, 25.0, "Hà Giang"),
+        "đồng văn": (23.2789, 105.3611, 20.0, "Đồng Văn, Hà Giang"),
+        "dong van": (23.2789, 105.3611, 20.0, "Đồng Văn, Hà Giang"),
+        "mèo vạc": (23.1652, 105.4103, 18.0, "Mèo Vạc, Hà Giang"),
+        "meo vac": (23.1652, 105.4103, 18.0, "Mèo Vạc, Hà Giang"),
+        "quản bạ": (23.0667, 104.9833, 15.0, "Quản Bạ, Hà Giang"),
+        "quan ba": (23.0667, 104.9833, 15.0, "Quản Bạ, Hà Giang"),
+        "yên minh": (23.1167, 105.1500, 15.0, "Yên Minh, Hà Giang"),
+        "yen minh": (23.1167, 105.1500, 15.0, "Yên Minh, Hà Giang"),
+        "lũng cú": (23.3611, 105.3194, 10.0, "Đồng Văn, Hà Giang"),
+        "lung cu": (23.3611, 105.3194, 10.0, "Đồng Văn, Hà Giang"),
+        "cao bằng": (22.6667, 106.2500, 20.0, "Cao Bằng"),
+        "cao bang": (22.6667, 106.2500, 20.0, "Cao Bằng"),
+        "bản giốc": (22.8539, 106.7239, 12.0, "Trùng Khánh, Cao Bằng"),
+        "ban gioc": (22.8539, 106.7239, 12.0, "Trùng Khánh, Cao Bằng"),
+        "bắc kạn": (22.1467, 105.8347, 15.0, "Bắc Kạn"),
+        "bac kan": (22.1467, 105.8347, 15.0, "Bắc Kạn"),
+        "hồ ba bể": (22.4167, 105.6167, 12.0, "Ba Bể, Bắc Kạn"),
+        "lạng sơn": (21.8536, 106.7617, 15.0, "Lạng Sơn"),
+        "lang son": (21.8536, 106.7617, 15.0, "Lạng Sơn"),
+        "thái nguyên": (21.5928, 105.8442, 15.0, "Thái Nguyên"),
+        "thai nguyen": (21.5928, 105.8442, 15.0, "Thái Nguyên"),
+        "tuyên quang": (21.8233, 105.2181, 15.0, "Tuyên Quang"),
+        "tuyen quang": (21.8233, 105.2181, 15.0, "Tuyên Quang"),
 
         # --- MIỀN TRUNG & DUYÊN HẢI ---
         "thanh hóa": (19.8067, 105.7852, 15.0, "Thanh Hóa"),
@@ -1722,6 +1914,14 @@ def search_pois_from_postgresql(question: str, extracted_features: Dict[str, Any
             dist_text = f"Cách trung tâm ~{dist:.1f} km. " if dist is not None else ""
             cat_display = m["category"] or m["fclass"] or "Địa điểm tham quan"
             img, hours, price, rating, enriched_desc = _get_curated_image_and_meta(name, cat_display, m.get("fclass") or "", region_name)
+            
+            # Crawl authentic real-world photography and persist to DB
+            from src.services.ai.image_crawler_agent import image_crawler_agent
+            real_img = m.get("image_url")
+            if not real_img:
+                real_img = image_crawler_agent.crawl_image(name, cat_display, region_name, osm_id=m.get("osm_id") or m.get("id"))
+            final_img = real_img or img
+
             desc = enriched_desc or f"{name} là {cat_display} uy tín tại {region_name}. {dist_text}Bấm 'Bản đồ' để mở định vị GPS thực tế trên Google Maps."
 
             pois.append({
@@ -1736,7 +1936,7 @@ def search_pois_from_postgresql(question: str, extracted_features: Dict[str, Any
                 "google_maps_url": gmaps_url,
                 "distance_km": dist,
                 "similarity": 0.95,
-                "image_url": img,
+                "image_url": final_img,
                 "thoi_gian_hoat_dong": hours,
                 "gia_ve": price,
                 "danh_gia": rating,

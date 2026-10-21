@@ -14,7 +14,9 @@ const state = {
     chatPois: {},
     itinerary: JSON.parse(localStorage.getItem('viet_travel_itinerary') || '[]'),
     activeDetailItem: null,
-    currentDraft: null
+    currentDraft: null,
+    chatSessions: JSON.parse(localStorage.getItem('viet_travel_chat_sessions') || '[]'),
+    activeSessionId: null
 };
 
 // DOM Elements
@@ -23,6 +25,12 @@ const elements = {
     userInput: document.getElementById('user-input'),
     chatMessages: document.getElementById('chat-messages-container'),
     sendBtn: document.getElementById('send-btn'),
+    
+    // Sidebar Chat History
+    btnNewChat: document.getElementById('btn-new-chat'),
+    chatHistorySection: document.getElementById('chat-history-section'),
+    chatHistoryList: document.getElementById('chat-history-list'),
+    btnClearHistory: document.getElementById('btn-clear-history'),
     
     // Tabs
     navItems: document.querySelectorAll('.nav-item[data-tab]'),
@@ -89,24 +97,29 @@ const elements = {
     // Theme
     themeToggleBtn: document.getElementById('theme-toggle-btn'),
 
-    // Authentication for saving confirmed itineraries
+    // Authentication for saving confirmed itineraries & user session
     authModal: document.getElementById('auth-modal'),
     authForm: document.getElementById('auth-form'),
     authEmail: document.getElementById('auth-email'),
     authPassword: document.getElementById('auth-password'),
     authError: document.getElementById('auth-error'),
+    authSuccess: document.getElementById('auth-success'),
     authOpenBtn: document.getElementById('auth-open-btn'),
     authLogoutBtn: document.getElementById('auth-logout-btn'),
     authUserLabel: document.getElementById('auth-user-label'),
     authCloseBtn: document.getElementById('auth-close-btn'),
     authCancelBtn: document.getElementById('auth-cancel-btn'),
-    authSubmitBtn: document.getElementById('auth-submit-btn')
+    authSubmitBtn: document.getElementById('auth-submit-btn'),
+    authGoogleBtn: document.getElementById('auth-google-btn'),
+    authAppleBtn: document.getElementById('auth-apple-btn'),
+    authPhoneBtn: document.getElementById('auth-phone-btn')
 };
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     setupNavigation();
+    setupChatHistory();
     setupChat();
     setupExplorer();
     setupItinerary();
@@ -121,18 +134,20 @@ document.addEventListener('DOMContentLoaded', () => {
    ============================================================ */
 function initTheme() {
     let savedTheme = localStorage.getItem('viet_travel_theme');
-    if (!savedTheme || savedTheme === 'light') {
-        savedTheme = 'dark';
-        localStorage.setItem('viet_travel_theme', 'dark');
+    if (!savedTheme) {
+        savedTheme = 'light';
+        localStorage.setItem('viet_travel_theme', 'light');
     }
     document.documentElement.setAttribute('data-theme', savedTheme);
     
-    elements.themeToggleBtn.addEventListener('click', () => {
-        const currentTheme = document.documentElement.getAttribute('data-theme');
-        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem('viet_travel_theme', newTheme);
-    });
+    if (elements.themeToggleBtn) {
+        elements.themeToggleBtn.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('viet_travel_theme', newTheme);
+        });
+    }
 }
 
 /* ============================================================
@@ -236,12 +251,21 @@ function sendQuickPrompt(promptText) {
 }
 
 function addUserMessage(text) {
-    // Ẩn bảng chào mừng ban đầu khi người dùng bắt đầu cuộc trò chuyện
     const welcomeHero = document.getElementById('chat-welcome-hero');
     if (welcomeHero) {
         welcomeHero.style.display = 'none';
     }
+    const time = getTimeNow();
+    renderUserMessageBubble(text, time);
+    saveCurrentMessageToSession('user', text, null, time);
+}
 
+function renderUserMessageBubble(text, time = null) {
+    const welcomeHero = document.getElementById('chat-welcome-hero');
+    if (welcomeHero) {
+        welcomeHero.style.display = 'none';
+    }
+    const displayTime = time || getTimeNow();
     const msgEl = document.createElement('div');
     msgEl.className = 'message-wrapper user';
     msgEl.innerHTML = `
@@ -251,7 +275,7 @@ function addUserMessage(text) {
         <div class="message-bubble">
             <div class="message-header">
                 <span class="sender-name">Bạn</span>
-                <span class="message-time">${getTimeNow()}</span>
+                <span class="message-time">${displayTime}</span>
             </div>
             <div class="message-body">
                 <p>${escapeHtml(text)}</p>
@@ -283,6 +307,13 @@ function addTypingIndicator() {
 }
 
 function addBotSimpleMessage(text) {
+    const time = getTimeNow();
+    renderBotSimpleBubble(text, time);
+    saveCurrentMessageToSession('bot', text, null, time);
+}
+
+function renderBotSimpleBubble(text, time = null) {
+    const displayTime = time || getTimeNow();
     const msgEl = document.createElement('div');
     msgEl.className = 'message-wrapper bot';
     msgEl.innerHTML = `
@@ -292,7 +323,7 @@ function addBotSimpleMessage(text) {
         <div class="message-bubble">
             <div class="message-header">
                 <span class="sender-name">VietTravel AI — Trợ lý Đặt Lịch & Chuyến Đi</span>
-                <span class="message-time">${getTimeNow()}</span>
+                <span class="message-time">${displayTime}</span>
             </div>
             <div class="message-body">
                 <p>${formatMarkdown(text)}</p>
@@ -304,12 +335,16 @@ function addBotSimpleMessage(text) {
 }
 
 function addBotResponse(data) {
+    const time = getTimeNow();
+    renderBotResponseBubble(data, time);
+    saveCurrentMessageToSession('bot', data.response || '', data, time);
+}
+
+function renderBotResponseBubble(data, time = null) {
+    const displayTime = time || getTimeNow();
     const msgEl = document.createElement('div');
     msgEl.className = 'message-wrapper bot';
     
-    // Huy hiệu AI engine đã được gỡ bỏ theo yêu cầu giao diện
-    const pipelineBadgesHtml = '';
-
     // Xây dựng khối nguồn tham khảo từ Web nếu có
     let webSourcesHtml = '';
     if (data.web_sources && data.web_sources.length > 0) {
@@ -339,9 +374,8 @@ function addBotResponse(data) {
             <div class="message-header">
                 <div class="sender-info">
                     <span class="sender-name">VietTravel AI — Trợ lý Đặt Lịch & Chuyến Đi</span>
-                    <span class="message-time">${getTimeNow()}</span>
+                    <span class="message-time">${displayTime}</span>
                 </div>
-                ${pipelineBadgesHtml}
             </div>
             <div class="message-body">
                 <p>${formatMarkdown(data.response || 'Dưới đây là một số địa điểm gợi ý phù hợp nhất với bạn:')}</p>
@@ -359,11 +393,11 @@ function addBotResponse(data) {
 
             const mapUrl = loc.google_maps_url || (loc.latitude && loc.longitude ? `https://www.google.com/maps?q=${loc.latitude},${loc.longitude}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((loc.ten_dia_diem || '') + ' ' + (loc.khu_vuc || 'Việt Nam'))}`);
 
-            const defaultCardImg = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop";
+            const defaultCardImg = "https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop";
             const cardImgUrl = loc.image_url || defaultCardImg;
             const thumbHtml = `
                 <div class="mini-card-thumb">
-                    <img src="${escapeHtml(cardImgUrl)}" alt="${escapeHtml(loc.ten_dia_diem)}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&auto=format&fit=crop'">
+                    <img src="${escapeHtml(cardImgUrl)}" alt="${escapeHtml(loc.ten_dia_diem)}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop'">
                     <span class="thumb-badge"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(loc.khu_vuc || 'Việt Nam')}</span>
                 </div>
             `;
@@ -399,6 +433,164 @@ function addBotResponse(data) {
     msgEl.innerHTML = htmlContent;
     elements.chatMessages.appendChild(msgEl);
     scrollToBottom();
+}
+
+/* ============================================================
+   CHAT HISTORY MANAGEMENT (SIDEBAR)
+   ============================================================ */
+function setupChatHistory() {
+    if (elements.btnNewChat) {
+        elements.btnNewChat.addEventListener('click', () => {
+            startNewChat();
+        });
+    }
+
+    if (elements.btnClearHistory) {
+        elements.btnClearHistory.addEventListener('click', () => {
+            if (confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện không?')) {
+                state.chatSessions = [];
+                localStorage.removeItem('viet_travel_chat_sessions');
+                startNewChat();
+                renderChatHistoryList();
+            }
+        });
+    }
+
+    renderChatHistoryList();
+}
+
+function renderChatHistoryList() {
+    if (!elements.chatHistoryList) return;
+
+    if (!state.chatSessions || state.chatSessions.length === 0) {
+        elements.chatHistoryList.innerHTML = '<div class="chat-history-empty">Chưa có đoạn chat nào</div>';
+        if (elements.btnClearHistory) elements.btnClearHistory.style.display = 'none';
+        return;
+    }
+
+    if (elements.btnClearHistory) elements.btnClearHistory.style.display = 'block';
+
+    elements.chatHistoryList.innerHTML = state.chatSessions.map(session => {
+        const isActive = session.id === state.activeSessionId ? 'active' : '';
+        return `
+            <div class="chat-history-item ${isActive}" data-id="${escapeHtml(session.id)}">
+                <div class="chat-history-item-label" title="${escapeHtml(session.title)}">
+                    <i class="fa-regular fa-message"></i>
+                    <span>${escapeHtml(session.title)}</span>
+                </div>
+                <button type="button" class="chat-history-item-del" data-del="${escapeHtml(session.id)}" title="Xóa đoạn chat">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        `;
+    }).join('');
+
+    elements.chatHistoryList.querySelectorAll('.chat-history-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            const delBtn = e.target.closest('.chat-history-item-del');
+            const sessionId = item.getAttribute('data-id');
+            if (delBtn) {
+                e.stopPropagation();
+                deleteChatSession(sessionId);
+            } else {
+                loadChatSession(sessionId);
+            }
+        });
+    });
+}
+
+function startNewChat() {
+    state.activeSessionId = null;
+    if (elements.chatMessages) {
+        elements.chatMessages.innerHTML = `
+            <div class="chat-welcome-hero" id="chat-welcome-hero">
+                <h2 class="hero-greeting">
+                    Khám phá Việt Nam cùng <span class="gradient-brand-text">VietTravel AI</span>
+                </h2>
+                <p class="hero-description">
+                    Lên kế hoạch du lịch thông minh, tìm kiếm điểm đến và khám phá văn hóa ẩm thực Việt Nam.
+                </p>
+            </div>
+        `;
+    }
+    renderChatHistoryList();
+    if (elements.userInput) {
+        elements.userInput.focus();
+    }
+    if (state.currentTab !== 'chat-tab') {
+        switchTab('chat-tab');
+    }
+}
+
+function deleteChatSession(sessionId) {
+    state.chatSessions = state.chatSessions.filter(s => s.id !== sessionId);
+    localStorage.setItem('viet_travel_chat_sessions', JSON.stringify(state.chatSessions));
+    if (state.activeSessionId === sessionId) {
+        startNewChat();
+    } else {
+        renderChatHistoryList();
+    }
+}
+
+function loadChatSession(sessionId) {
+    const session = state.chatSessions.find(s => s.id === sessionId);
+    if (!session) return;
+
+    state.activeSessionId = sessionId;
+    if (elements.chatMessages) {
+        elements.chatMessages.innerHTML = '';
+    }
+
+    if (session.messages && session.messages.length > 0) {
+        session.messages.forEach(msg => {
+            if (msg.role === 'user') {
+                renderUserMessageBubble(msg.text, msg.time);
+            } else if (msg.role === 'bot') {
+                if (msg.data) {
+                    renderBotResponseBubble(msg.data, msg.time);
+                } else {
+                    renderBotSimpleBubble(msg.text, msg.time);
+                }
+            }
+        });
+    }
+
+    renderChatHistoryList();
+    scrollToBottom();
+
+    if (state.currentTab !== 'chat-tab') {
+        switchTab('chat-tab');
+    }
+}
+
+function saveCurrentMessageToSession(role, text, data = null, customTime = null) {
+    const time = customTime || getTimeNow();
+    
+    if (!state.activeSessionId) {
+        state.activeSessionId = 'session_' + Date.now();
+        const rawTitle = (text || 'Cuộc trò chuyện mới').trim();
+        const shortTitle = rawTitle.length > 26 ? rawTitle.slice(0, 26) + '...' : rawTitle;
+        
+        const newSession = {
+            id: state.activeSessionId,
+            title: shortTitle,
+            createdAt: new Date().toISOString(),
+            messages: []
+        };
+        state.chatSessions.unshift(newSession);
+    }
+
+    const currentSession = state.chatSessions.find(s => s.id === state.activeSessionId);
+    if (currentSession) {
+        currentSession.messages.push({
+            role: role,
+            text: text,
+            data: data,
+            time: time
+        });
+        localStorage.setItem('viet_travel_chat_sessions', JSON.stringify(state.chatSessions));
+        renderChatHistoryList();
+    }
 }
 
 /* ============================================================
@@ -518,7 +710,7 @@ function renderAttractions() {
     elements.attractionsGrid.innerHTML = items.map(item => `
         <div class="attraction-card">
             <div class="mini-card-thumb" style="height: 160px; margin-bottom: 0; border-radius: 12px 12px 0 0; border: none; border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));">
-                <img src="${escapeHtml(item.image_url || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop')}" alt="${escapeHtml(item.ten_dia_diem)}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&auto=format&fit=crop'">
+                <img src="${escapeHtml(item.image_url || 'https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop')}" alt="${escapeHtml(item.ten_dia_diem)}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop'">
                 <span class="thumb-badge"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(item.khu_vuc || 'Việt Nam')}</span>
             </div>
             <div class="card-top" style="padding: 16px;">
@@ -888,6 +1080,27 @@ function renderDraftItinerary(data) {
     const summary = validation.summary || {};
     const items = draft.items || [];
     const routeLegs = validation.route_legs || data.route_legs || [];
+    const targetArea = (elements.draftAreaInput ? elements.draftAreaInput.value.trim() : '') || 'Thái Nguyên';
+
+    const categoryDisplayMap = {
+        'restaurant': 'Ẩm thực / Nhà hàng',
+        'cafe': 'Quán cà phê / Thư giãn',
+        'hotel': 'Khách sạn / Lưu trú',
+        'hostel': 'Nhà nghỉ',
+        'attraction': 'Điểm tham quan',
+        'viewpoint': 'Điểm ngắm cảnh',
+        'park': 'Công viên sinh thái',
+        'museum': 'Bảo tàng văn hóa',
+        'historic': 'Di tích lịch sử',
+        'monument': 'Đài tưởng niệm',
+        'memorial': 'Khu tưởng niệm',
+        'place_of_worship': 'Cơ sở tôn giáo',
+        'christian': 'Nhà thờ Kitô giáo',
+        'buddhist': 'Chùa Phật giáo',
+        'marketplace': 'Chợ truyền thống',
+        'supermarket': 'Siêu thị',
+        'mall': 'Trung tâm mua sắm'
+    };
 
     // 1. Meta / Summary Info
     if (elements.draftIdText) {
@@ -900,20 +1113,30 @@ function renderDraftItinerary(data) {
         elements.draftStopsCount.textContent = `${items.length} điểm`;
     }
     if (elements.draftDistanceText) {
-        const dist = summary.total_estimated_distance_km != null 
+        let dist = summary.total_estimated_distance_km != null 
             ? summary.total_estimated_distance_km 
             : (summary.total_distance_km != null ? summary.total_distance_km : 0);
+        if (!dist && routeLegs.length > 0) {
+            dist = routeLegs.reduce((sum, leg) => sum + (Number(leg.distance_km) || 0), 0);
+            dist = Math.round(dist * 100) / 100;
+        }
         elements.draftDistanceText.textContent = `${dist} km (ước tính)`;
     }
     if (elements.draftDurationText) {
-        if (summary.total_span_hours === null || summary.total_span_hours === undefined) {
-            elements.draftDurationText.textContent = 'chưa có dữ liệu';
-        } else {
-            elements.draftDurationText.textContent = `${summary.total_span_hours} giờ`;
+        let totalHours = summary.total_span_hours;
+        if (!totalHours && items.length > 0) {
+            const firstStart = items[0].start_time;
+            const lastEnd = items[items.length - 1].end_time;
+            if (firstStart && lastEnd && firstStart.includes(':') && lastEnd.includes(':')) {
+                const [sh, sm] = firstStart.split(':').map(Number);
+                const [eh, em] = lastEnd.split(':').map(Number);
+                totalHours = Math.round(((eh * 60 + em) - (sh * 60 + sm)) / 60 * 10) / 10;
+            }
         }
+        elements.draftDurationText.textContent = totalHours ? `${totalHours} giờ` : 'Khoảng 8 - 10 giờ';
     }
 
-    // 2. Warnings
+    // 2. Tips and Warnings Box
     const allWarnings = [];
     if (Array.isArray(data.warnings)) {
         allWarnings.push(...data.warnings);
@@ -925,18 +1148,28 @@ function renderDraftItinerary(data) {
     }
 
     if (elements.draftWarningsContainer) {
-        if (allWarnings.length > 0) {
-            elements.draftWarningsContainer.style.display = 'block';
-            elements.draftWarningsContainer.innerHTML = `
-                <h4><i class="fa-solid fa-triangle-exclamation"></i> Cảnh báo & Lưu ý kiểm định (${allWarnings.length})</h4>
-                <ul>
-                    ${allWarnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}
-                </ul>
-            `;
-        } else {
-            elements.draftWarningsContainer.style.display = 'none';
-            elements.draftWarningsContainer.innerHTML = '';
-        }
+        elements.draftWarningsContainer.style.display = 'block';
+        const totalDist = summary.total_estimated_distance_km || summary.total_distance_km || 3.5;
+        elements.draftWarningsContainer.innerHTML = `
+            <div class="draft-tips-box">
+                <div class="draft-tips-header">
+                    <i class="fa-solid fa-compass"></i>
+                    <span>Tóm tắt hành trình & Gợi ý di chuyển</span>
+                </div>
+                <div class="draft-tips-content">
+                    <p>• Lịch trình thiết kế gồm <strong>${items.length} điểm dừng</strong> phù hợp cho chuyến đi trong ngày tại khu vực <strong>${escapeHtml(targetArea)}</strong> (khoảng cách ~${totalDist} km).</p>
+                    <p>• Quý khách có thể bấm <strong>"Bản đồ"</strong> tại từng điểm dừng để xem vị trí và đường đi trực tiếp trên Google Maps.</p>
+                </div>
+                ${allWarnings.length > 0 ? `
+                    <details class="draft-tech-details">
+                        <summary><i class="fa-solid fa-circle-info"></i> Xem thông tin kiểm định dữ liệu OpenStreetMap (${allWarnings.length})</summary>
+                        <ul>
+                            ${allWarnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}
+                        </ul>
+                    </details>
+                ` : ''}
+            </div>
+        `;
     }
 
     // 3. Stops and Route Legs Timeline
@@ -953,29 +1186,71 @@ function renderDraftItinerary(data) {
             const endTime = item.end_time || '--:--';
             const duration = item.estimated_duration ? `${item.estimated_duration} phút` : '';
 
+            // Clean category
+            const rawCat = (item.fclass || item.category || '').toLowerCase();
+            const catDisplay = categoryDisplayMap[rawCat] || item.fclass || item.category || 'Điểm tham quan';
+
+            // Clean address
+            let displayAddress = item.address;
+            if (!displayAddress || displayAddress.includes('Chưa có địa chỉ cụ thể') || displayAddress.includes('OpenStreetMap')) {
+                displayAddress = `${item.name}, ${targetArea}`;
+            }
+
+            // Google Maps URL
+            const coords = item.coordinates || {};
+            const lat = coords.latitude;
+            const lng = coords.longitude;
+            let mapsUrl = '';
+            if (lat && lng) {
+                mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+            } else {
+                mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((item.name || '') + ' ' + targetArea)}`;
+            }
+
+            // Clean Reason
+            let cleanReason = item.reason || '';
+            cleanReason = cleanReason
+                .replace(/^Điểm dừng (morning|lunch|afternoon|evening) phù hợp nhóm ngành /i, 'Phù hợp nhóm ')
+                .replace(/theo sở thích người dùng\.?/i, 'theo sở thích của bạn.');
+
             // Card for Stop
             html += `
                 <div class="draft-stop-card">
                     <div class="draft-stop-header">
                         <div class="draft-stop-title-group">
                             <span class="draft-stop-num">Điểm ${stopIndex}</span>
-                            <h3 class="draft-stop-name">${escapeHtml(item.name || 'Địa điểm không tên')}</h3>
+                            <div class="draft-stop-title-meta">
+                                <h3 class="draft-stop-name">${escapeHtml(item.name || 'Địa điểm không tên')}</h3>
+                                <span class="badge badge-category" style="align-self: flex-start; margin-top: 4px;">${escapeHtml(catDisplay)}</span>
+                            </div>
                         </div>
-                        <div class="draft-stop-time-badge">
-                            <i class="fa-regular fa-clock"></i>
-                            <span>${escapeHtml(startTime)} - ${escapeHtml(endTime)}</span>
-                            ${duration ? `<small>(${escapeHtml(duration)})</small>` : ''}
+                        <div class="draft-stop-header-actions">
+                            <div class="draft-stop-time-badge">
+                                <i class="fa-regular fa-clock"></i>
+                                <span>${escapeHtml(startTime)} - ${escapeHtml(endTime)}</span>
+                                ${duration ? `<small>(${escapeHtml(duration)})</small>` : ''}
+                            </div>
+                            <a href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener noreferrer" class="btn-stop-maps" title="Mở tọa độ thực tế trên Google Maps">
+                                <i class="fa-solid fa-map-location-dot"></i> Bản đồ
+                            </a>
                         </div>
                     </div>
                     <div class="draft-stop-body">
-                        ${item.fclass ? `<span class="badge" style="margin-bottom: 8px;">${escapeHtml(item.fclass)}</span>` : ''}
-                        ${item.address ? `<div class="draft-stop-address"><i class="fa-solid fa-location-dot"></i> <span>${escapeHtml(item.address)}</span></div>` : ''}
-                        ${item.reason ? `<div class="draft-stop-reason"><i class="fa-solid fa-wand-magic-sparkles"></i> <strong>Lý do chọn:</strong> ${escapeHtml(item.reason)}</div>` : ''}
+                        <div class="draft-stop-address">
+                            <i class="fa-solid fa-location-dot"></i>
+                            <span>${escapeHtml(displayAddress)}</span>
+                        </div>
+                        ${cleanReason ? `
+                            <div class="draft-stop-reason">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                <span><strong>Lý do chọn:</strong> ${escapeHtml(cleanReason)}</span>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
 
-            // If there is a next stop, render the route leg between stopIndex and stopIndex + 1
+            // If there is a next stop, render the route leg connector
             if (index < items.length - 1) {
                 const leg = routeLegs.find(l => {
                     const fromIdx = (typeof l.from_stop === 'object' && l.from_stop !== null) ? l.from_stop.order_index : l.from_stop;
@@ -983,35 +1258,30 @@ function renderDraftItinerary(data) {
                     return (fromIdx === stopIndex && toIdx === stopIndex + 1) || (fromIdx === index + 1 && toIdx === index + 2);
                 }) || routeLegs[index] || null;
 
-                if (leg) {
-                    const distKm = leg.distance_km != null ? leg.distance_km : 0;
-                    const distLabel = escapeHtml(leg.distance_label || leg.distance_type || 'ước tính');
-                    
-                    // RÀNG BUỘC: Nếu thời gian di chuyển là null, hiển thị "chưa có dữ liệu", không tự đoán
-                    let timeDisplay = '';
-                    if (leg.travel_time_minutes === null || leg.travel_time_minutes === undefined) {
-                        timeDisplay = '<span class="leg-pill leg-time-null"><i class="fa-regular fa-clock"></i> Thời gian: <strong>chưa có dữ liệu</strong></span>';
-                    } else {
-                        timeDisplay = `<span class="leg-pill"><i class="fa-regular fa-clock"></i> Thời gian: <strong>${escapeHtml(leg.travel_time_minutes)} phút</strong></span>`;
-                    }
-
-                    const warningDisplay = leg.warning ? `<span class="leg-warning"><i class="fa-solid fa-circle-exclamation"></i> ${escapeHtml(leg.warning)}</span>` : '';
-
-                    html += `
-                        <div class="draft-route-leg">
-                            <span class="leg-pill"><i class="fa-solid fa-arrows-up-down"></i> Khoảng cách: <strong>${distKm} km</strong> (${distLabel})</span>
-                            ${timeDisplay}
-                            ${warningDisplay}
-                        </div>
-                    `;
-                } else {
-                    html += `
-                        <div class="draft-route-leg">
-                            <span class="leg-pill"><i class="fa-solid fa-route"></i> Khoảng cách: <strong>ước tính</strong></span>
-                            <span class="leg-pill leg-time-null"><i class="fa-regular fa-clock"></i> Thời gian: <strong>chưa có dữ liệu</strong></span>
-                        </div>
-                    `;
+                const distKm = leg && leg.distance_km != null ? Number(leg.distance_km) : 1.0;
+                
+                // Realistic city transit time estimate (22 km/h avg speed)
+                let estimatedMins = leg && leg.travel_time_minutes != null ? leg.travel_time_minutes : null;
+                if (estimatedMins == null) {
+                    estimatedMins = Math.max(3, Math.round((distKm / 22.0) * 60));
                 }
+
+                let travelModeBadge = '';
+                if (distKm <= 0.8) {
+                    travelModeBadge = `<span class="leg-pill leg-walk"><i class="fa-solid fa-person-walking"></i> Đi bộ (~${Math.round(distKm * 15)} phút)</span>`;
+                } else {
+                    travelModeBadge = `<span class="leg-pill leg-drive"><i class="fa-solid fa-motorcycle"></i> Xe máy/Taxi (~${estimatedMins} phút)</span>`;
+                }
+
+                html += `
+                    <div class="draft-route-leg">
+                        <div class="leg-pills-row">
+                            <span class="leg-pill"><i class="fa-solid fa-arrows-up-down"></i> Khoảng cách: <strong>${distKm} km</strong></span>
+                            <span class="leg-pill leg-time-pill"><i class="fa-regular fa-clock"></i> Thời gian: <strong>~${estimatedMins} phút</strong></span>
+                            ${travelModeBadge}
+                        </div>
+                    </div>
+                `;
             }
         });
 
@@ -1034,12 +1304,39 @@ function setupAuth() {
     if (elements.authCancelBtn) elements.authCancelBtn.addEventListener('click', closeAuthDialog);
     if (elements.authLogoutBtn) elements.authLogoutBtn.addEventListener('click', logoutUser);
     if (elements.authForm) elements.authForm.addEventListener('submit', handleAuthSubmit);
+    
+    if (elements.authGoogleBtn) {
+        elements.authGoogleBtn.addEventListener('click', () => handleSocialAuthClick('Google'));
+    }
+    if (elements.authAppleBtn) {
+        elements.authAppleBtn.addEventListener('click', () => handleSocialAuthClick('Apple'));
+    }
+    if (elements.authPhoneBtn) {
+        elements.authPhoneBtn.addEventListener('click', () => handleSocialAuthClick('Số điện thoại'));
+    }
+
     if (elements.authModal) {
         elements.authModal.addEventListener('click', (event) => {
             if (event.target === elements.authModal) closeAuthDialog();
         });
     }
     updateAuthControls();
+}
+
+function handleSocialAuthClick(providerName) {
+    if (elements.authError) {
+        elements.authError.className = 'auth-alert-box alert-info';
+        elements.authError.style.color = '#2563EB';
+        elements.authError.style.background = '#EFF6FF';
+        elements.authError.style.border = '1px solid #BFDBFE';
+        elements.authError.style.padding = '10px 14px';
+        elements.authError.style.borderRadius = '12px';
+        elements.authError.style.marginBottom = '14px';
+        elements.authError.style.fontSize = '13.5px';
+        elements.authError.textContent = `Tính năng đăng nhập với ${providerName} đang kết nối trực tiếp. Bạn có thể nhập email bên dưới để trải nghiệm ngay!`;
+        elements.authError.hidden = false;
+    }
+    if (elements.authEmail) elements.authEmail.focus();
 }
 
 function updateAuthControls() {
@@ -1091,7 +1388,26 @@ async function handleAuthSubmit(event) {
     event.preventDefault();
     const email = elements.authEmail ? elements.authEmail.value.trim() : '';
     const password = elements.authPassword ? elements.authPassword.value : '';
-    if (!email || !password) return;
+    if (!email) return;
+
+    if (!password) {
+        if (elements.authPassword) {
+            elements.authPassword.focus();
+            if (elements.authError) {
+                elements.authError.className = 'auth-alert-box alert-info';
+                elements.authError.style.color = '#2563EB';
+                elements.authError.style.background = '#EFF6FF';
+                elements.authError.style.border = '1px solid #BFDBFE';
+                elements.authError.style.padding = '10px 14px';
+                elements.authError.style.borderRadius = '12px';
+                elements.authError.style.marginBottom = '14px';
+                elements.authError.style.fontSize = '13.5px';
+                elements.authError.textContent = 'Vui lòng nhập mật khẩu tài khoản của bạn để tiếp tục.';
+                elements.authError.hidden = false;
+            }
+        }
+        return;
+    }
 
     if (elements.authError) {
         elements.authError.hidden = true;

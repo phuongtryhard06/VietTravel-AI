@@ -34,7 +34,9 @@ pagination_parser.add_argument('sort_order', type=str, default='asc', help='Sort
 # Định nghĩa model cho request/response
 question_model = travel_chatbot_ns.model('Question', {
     'question': fields.String(required=True, description='User question about travel in Ho Chi Minh City'),
-    'enable_web_search': fields.Boolean(required=False, description='Force enable live web search')
+    'enable_web_search': fields.Boolean(required=False, description='Force enable live web search'),
+    'session_id': fields.String(required=False, description='Optional session identifier for multi-turn state'),
+    'conversation_id': fields.Integer(required=False, description='Optional conversation identifier for persistence')
 })
 
 answer_model = travel_chatbot_ns.model('Answer', {
@@ -232,6 +234,20 @@ class SearchLocation(Resource):
             print(f"Ngôn ngữ phát hiện: {lang_info['name']} (confidence: {language_result.get('confidence', 0):.1%})")
             print("==========================")
             
+            # Phase 2: Multi-Agent Coordinator Integration (with zero-downtime rollback)
+            try:
+                from src.services.ai.backend_adapter import is_coordinator_enabled, handle_coordinator_chat_request
+                if is_coordinator_enabled():
+                    coord_payload, status_code = handle_coordinator_chat_request(
+                        request_data=data,
+                        request_headers=request.headers,
+                        detected_language=detected_language
+                    )
+                    if coord_payload is not None:
+                        return coord_payload, status_code
+            except Exception as coord_err:
+                print(f"[CoordinatorAdapter] Error running multi-agent coordinator: {coord_err}. Falling back to legacy pipeline.")
+
             # Bước 2: Trích xuất thực thể và ý định từ câu hỏi
             print("=== TRÍCH XUẤT THỰC THỂ ===")
             extraction_result = extract_user_intent_and_features(question)
@@ -246,10 +262,13 @@ class SearchLocation(Resource):
             print("==========================")
             
             # Format kết quả trích xuất để hiển thị
-            formatted_extraction = format_extraction_result(extraction_result)
-            print("Kết quả trích xuất đã format:")
-            print(formatted_extraction)
-            print("==========================")
+            try:
+                formatted_extraction = format_extraction_result(extraction_result)
+                print("Kết quả trích xuất đã format:")
+                print(formatted_extraction)
+                print("==========================")
+            except Exception:
+                pass
             
             # Bước 3: Thực hiện tìm kiếm kết hợp với bộ lọc
             print("=== THỰC HIỆN TÌM KIẾM TỪ POSTGRESQL STAGING (30.800+ POIs) ===")
@@ -336,7 +355,7 @@ class SearchLocation(Resource):
                 'web_sources': web_sources,
                 'language': detected_language,
                 'language_name': lang_info['name'],
-                'search_results': formatted_results,
+                'search_results': chatbot_response.get('search_results') or formatted_results,
                 'suggested_activities': chatbot_response.get('suggested_activities', []),
                 'follow_up_questions': chatbot_response.get('follow_up_questions', []),
                 'extracted_features': extraction_result.get('extracted_features', {})

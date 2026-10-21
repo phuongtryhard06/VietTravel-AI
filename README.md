@@ -123,15 +123,49 @@ flowchart TD
 
 ## 📦 Hướng dẫn Cài đặt & Khởi chạy Dự án
 
-### Yêu cầu Tiên quyết
-* **Hệ điều hành**: Windows 10/11, macOS, hoặc Ubuntu Linux.
-* **Python**: Phiên bản 3.10 trở lên.
-* **Docker Desktop**: Để chạy container PostgreSQL.
-* **Git**: Để quản lý mã nguồn.
+### ⚡ Khởi chạy Nhanh (Quick Start)
+Nếu bạn đã clone dự án, đã có môi trường ảo `venv` và cấu hình file `.env`:
+
+**Trên Windows (PowerShell):**
+```powershell
+# 1. Khởi chạy Database PostgreSQL ngầm qua Docker
+docker compose -f docker-compose.dev.yml up -d
+
+# 2. Kích hoạt môi trường ảo
+.\venv\Scripts\Activate.ps1
+
+# 3. Khởi chạy Server Flask
+python main.py
+```
+> *Mẹo*: Nếu gặp lỗi script trên PowerShell, gõ: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` rồi chạy lại lệnh activate.
+
+**Trên Linux / macOS:**
+```bash
+# 1. Khởi chạy Database PostgreSQL
+docker compose -f docker-compose.dev.yml up -d
+
+# 2. Kích hoạt môi trường ảo
+source venv/bin/activate
+
+# 3. Khởi chạy Server Flask
+python main.py
+```
+
+Ứng dụng sẽ hoạt động tại: **`http://127.0.0.1:5000`** (Web Client) và **`http://127.0.0.1:5000/docs`** (Swagger API).
 
 ---
 
-### Bước 1: Clone Repository
+### 🛠️ Cài đặt Chi tiết từ Đầu (Full Setup Guide)
+
+#### Yêu cầu Tiên quyết
+* **Hệ điều hành**: Windows 10/11, macOS, hoặc Ubuntu Linux.
+* **Python**: Phiên bản 3.10 trở lên.
+* **Docker Desktop**: Để chạy container PostgreSQL có sẵn extension `pgvector`.
+* **Git**: Quản lý mã nguồn.
+
+---
+
+#### Bước 1: Clone Repository
 ```bash
 git clone https://github.com/phuongtryhard06/VietTravel-AI.git
 cd VietTravel-AI
@@ -139,11 +173,11 @@ cd VietTravel-AI
 
 ---
 
-### Bước 2: Thiết lập Môi trường Ảo (Virtualenv)
+#### Bước 2: Thiết lập Môi trường Ảo (Virtualenv)
 ```bash
 # Trên Windows (PowerShell):
 python -m venv venv
-.\venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 
 # Trên Linux / macOS:
 python3 -m venv venv
@@ -152,7 +186,7 @@ source venv/bin/activate
 
 ---
 
-### Bước 3: Cài đặt Thư viện Phụ thuộc
+#### Bước 3: Cài đặt Thư viện Phụ thuộc
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
@@ -160,7 +194,7 @@ pip install -r requirements.txt
 
 ---
 
-### Bước 4: Khởi chạy Database PostgreSQL bằng Docker
+#### Bước 4: Khởi chạy Database PostgreSQL bằng Docker
 Dự án đã cấu hình sẵn file `docker-compose.dev.yml` độc lập, tránh xung đột cổng:
 ```bash
 docker compose -f docker-compose.dev.yml up -d
@@ -169,7 +203,7 @@ docker compose -f docker-compose.dev.yml up -d
 
 ---
 
-### Bước 5: Cấu hình File Biến Môi trường (`.env`)
+#### Bước 5: Cấu hình File Biến Môi trường (`.env`)
 Tạo hoặc kiểm tra file `.env` tại thư mục gốc với các thông số sau:
 
 ```env
@@ -202,7 +236,7 @@ MAPBOX_ACCESS_TOKEN=your_mapbox_token_here
 
 ---
 
-### Bước 6: Khởi tạo Bảng Dữ liệu & Nạp Địa điểm Toàn quốc
+#### Bước 6: Khởi tạo Bảng Dữ liệu & Nạp Địa điểm Toàn quốc
 Chạy các tập lệnh nạp dữ liệu địa lý thực tế vào cơ sở dữ liệu:
 
 ```bash
@@ -215,7 +249,7 @@ python scripts/import_all_osm_poi.py --apply --batch-size 1000
 
 ---
 
-### Bước 7: Khởi chạy Máy chủ Flask
+#### Bước 7: Khởi chạy Máy chủ Flask
 ```bash
 python main.py
 ```
@@ -227,7 +261,7 @@ Server sẽ tự động:
 
 ---
 
-### Bước 8: Trải nghiệm Ứng dụng
+#### Bước 8: Trải nghiệm Ứng dụng
 * **Giao diện Web Trực quan**: Truy cập `http://localhost:5000/` trên trình duyệt để trải nghiệm toàn bộ giao diện tư vấn đa tác tử và lập lịch trình.
 * **Tài liệu Tương tác Swagger API**: Truy cập `http://localhost:5000/docs` để kiểm thử toàn bộ API endpoints.
 
