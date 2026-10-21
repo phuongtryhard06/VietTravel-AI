@@ -359,12 +359,14 @@ function addBotResponse(data) {
 
             const mapUrl = loc.google_maps_url || (loc.latitude && loc.longitude ? `https://www.google.com/maps?q=${loc.latitude},${loc.longitude}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((loc.ten_dia_diem || '') + ' ' + (loc.khu_vuc || 'Việt Nam'))}`);
 
-            const thumbHtml = loc.image_url ? `
+            const defaultCardImg = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop";
+            const cardImgUrl = loc.image_url || defaultCardImg;
+            const thumbHtml = `
                 <div class="mini-card-thumb">
-                    <img src="${escapeHtml(loc.image_url)}" alt="${escapeHtml(loc.ten_dia_diem)}" loading="lazy">
+                    <img src="${escapeHtml(cardImgUrl)}" alt="${escapeHtml(loc.ten_dia_diem)}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&auto=format&fit=crop'">
                     <span class="thumb-badge"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(loc.khu_vuc || 'Việt Nam')}</span>
                 </div>
-            ` : '';
+            `;
 
             htmlContent += `
                 <div class="mini-card">
@@ -515,10 +517,15 @@ function renderAttractions() {
 
     elements.attractionsGrid.innerHTML = items.map(item => `
         <div class="attraction-card">
-            <div class="card-top">
+            <div class="mini-card-thumb" style="height: 160px; margin-bottom: 0; border-radius: 12px 12px 0 0; border: none; border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));">
+                <img src="${escapeHtml(item.image_url || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop')}" alt="${escapeHtml(item.ten_dia_diem)}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&auto=format&fit=crop'">
+                <span class="thumb-badge"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(item.khu_vuc || 'Việt Nam')}</span>
+            </div>
+            <div class="card-top" style="padding: 16px;">
                 <div class="card-badges">
                     <span class="badge">${escapeHtml(item.loai_dia_diem || 'Địa điểm')}</span>
                     <span class="badge badge-district">${escapeHtml(item.khu_vuc || 'Việt Nam')}</span>
+                    ${item.danh_gia ? `<span class="badge badge-rating"><i class="fa-solid fa-star"></i> ${item.danh_gia}</span>` : ''}
                 </div>
                 <h3 class="card-title">${escapeHtml(item.ten_dia_diem)}</h3>
                 <p class="card-desc">${escapeHtml(item.mo_ta || 'Chưa có mô tả chi tiết.')}</p>
@@ -1482,6 +1489,14 @@ function formatMarkdown(text) {
 
     // 3. Escape HTML trước để đảm bảo an toàn XSS
     let html = escapeHtml(s);
+
+    // 3.4. Parse Markdown images ![Alt](URL) thành khung ảnh trực quan như cẩm nang du lịch
+    html = html.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s\)\&]+(?:\&amp;[^\s\)]*)*)\)/g, `
+        <div class="chat-inline-img-box">
+            <img src="$2" alt="$1" class="chat-inline-img" loading="lazy" onerror="this.parentElement.style.display='none'">
+            <span class="chat-inline-caption"><i class="fa-solid fa-camera"></i> $1</span>
+        </div>
+    `);
 
     // 3.5. Parse Markdown links [Title](URL) thành thẻ <a> có thể bấm mở trực tiếp
     html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)\&]+(?:\&amp;[^\s\)]*)*)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="chat-inline-link"><i class="fa-solid fa-arrow-up-right-from-square"></i> $1</a>');

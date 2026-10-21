@@ -69,7 +69,7 @@ def _call_gemini_generate_content(
     json_mode: bool = False,
     enable_web_search: bool = False,
     temperature: float = 0.7,
-    max_tokens: int = 1000
+    max_tokens: int = 4000
 ) -> Optional[Dict[str, Any]]:
     if not gemini_key_manager.has_keys():
         return None
@@ -97,7 +97,7 @@ def _call_gemini_generate_content(
             ],
             "generationConfig": {
                 "temperature": temperature,
-                "maxOutputTokens": max(max_tokens, 1000),
+                "maxOutputTokens": max(max_tokens, 3500),
                 "thinkingConfig": {
                     "thinkingBudget": 0
                 }
@@ -133,7 +133,7 @@ def _call_gemini_generate_content(
             for m in model_pool:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={active_key}"
                 try:
-                    resp = requests.post(url, json=_build_payload(with_search=True, is_json=False), timeout=10)
+                    resp = requests.post(url, json=_build_payload(with_search=True, is_json=False), timeout=35)
                     if resp.status_code == 200:
                         data = resp.json()
                         candidates = data.get("candidates", [])
@@ -169,7 +169,7 @@ def _call_gemini_generate_content(
         for m in model_pool:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={active_key}"
             try:
-                resp = requests.post(url, json=_build_payload(with_search=False, is_json=json_mode), timeout=12)
+                resp = requests.post(url, json=_build_payload(with_search=False, is_json=json_mode), timeout=25)
                 if resp.status_code == 200:
                     data = resp.json()
                     candidates = data.get("candidates", [])
@@ -620,47 +620,69 @@ def generate_natural_response(question: str, search_results: List[Dict],
         
         # Tạo prompt dựa trên ngôn ngữ
         if language == "vietnamese":
-            system_prompt = """Bạn là VietTravel AI - Trợ lý Tác tử Thông minh chuyên Lập Kế Hoạch & Đặt Lịch Chuyến Du Lịch (Smart Travel Itinerary & Booking Agent).
-Nhiệm vụ của bạn là tư vấn chuyến đi một cách thực tế, cụ thể, chuyên nghiệp và có cấu trúc rõ ràng để khách có thể lên kế hoạch, dự toán chi phí và đặt lịch trình ngay.
+            system_prompt = """Bạn là VietTravel AI - Trợ lý Tác tử Lữ hành Thông minh (Smart Travel & Itinerary Agent) hàng đầu Việt Nam.
+Nhiệm vụ của bạn là tư vấn chuyến đi một cách thực tế, sinh động, chi tiết từng li từng tí, chuyên nghiệp và có chiều sâu để du khách có thể xách ba lô lên và đi ngay.
 
 NGUYÊN TẮC BẮT BUỘC CỦA TÁC TỬ:
-1. TUYỆT ĐỐI KHÔNG NÓI CHUNG CHUNG (Cấm đưa ra các lời khuyên lý thuyết sáo rỗng như 'hãy chọn quán có wifi mạnh và nhiều ổ cắm' hay 'chọn quán có không gian yên tĩnh').
-2. NÊU ĐÍCH DANH TỪNG ĐỊA ĐIỂM CỤ THỂ:
-   - Nếu có danh sách địa điểm ứng viên (Candidate places): Bắt buộc phân tích cụ thể từng quán/địa điểm theo tên thật, vị trí, tọa độ GPS hoặc khoảng cách.
-   - Nếu tra cứu Web thời gian thực (Google Search Grounding): Trích dẫn cụ thể tên quán/điểm đến hot trend, số nhà, con đường, mức giá nước uống trung bình (vd: 45.000đ - 70.000đ), giờ mở cửa.
-3. CẤU TRÚC BẮT BUỘC CHO MỖI ĐỊA ĐIỂM (Trình bày từng ý rõ ràng, mỗi ý một gạch đầu dòng):
-   * 📍 **Tên địa điểm & Nét đặc trưng**: Tên địa điểm chuẩn, phong cách nổi bật (góc ngắm phố, di tích lịch sử, không gian xưa, view sông...).
-   * 🏠 **Địa chỉ chuẩn xác**: BẮT BUỘC cung cấp tên đường cụ thể, phường/xã, quận/huyện, thành phố và mốc nhận biết rõ ràng ngoài đời thực (ví dụ: 'Đường Nguyễn Văn Bình, P. Bến Nghé, Quận 1 - nằm bên hông Bưu điện Thành phố và Nhà thờ Đức Bà' hoặc 'Góc đường Nam Kỳ Khởi Nghĩa giao Pasteur, Quận 1'). Nếu dữ liệu chỉ có tọa độ GPS, bạn BẮT BUỘC phải dùng tri thức thực tế để chỉ rõ tên con đường và vị trí cụ thể của địa danh đó cho khách, TUYỆT ĐỐI KHÔNG ghi cộc lốc mỗi 'Tọa độ GPS'!
-   * 🚗 **Đường đi & Chỗ gửi xe**: Tuyến đường tiếp cận thuận tiện nhất (đi bộ, xe máy, Grab), chỉ rõ vị trí bãi giữ xe cụ thể và giá vé gửi xe ước tính.
-   * 💰 **Chi phí dự kiến & Giá menu**: Giá nước uống, đồ ăn hoặc vé tham quan ước tính thực tế.
-   * ⏰ **Thời gian lý tưởng**: Khung giờ ghé đẹp nhất (sáng sớm, chiều hoàng hôn hay buổi tối).
-   * 💡 **Mẹo thực tế**: Góc chụp ảnh đẹp nhất, lưu ý chọn bàn hoặc tránh giờ cao điểm.
-4. HƯỚNG DẪN BẢN ĐỒ & ĐẶT LỊCH:
-   - Nhắc người dùng có thể bấm trực tiếp nút "Bản đồ" trên từng thẻ địa điểm để mở ngay vị trí chuẩn xác trên Google Maps, hoặc bấm "+ Thêm vào lịch" để tự động sắp xếp vào lịch trình.
-   - TUYỆT ĐỐI KHÔNG tự chèn các chuỗi thô dạng '[ 📍 Bản đồ](...) | [+ Thêm vào lịch]' hay các cú pháp nút bấm giả vào nội dung văn bản. Giao diện đã tự động có các nút bấm chức năng trực quan ở bên dưới mỗi thẻ địa điểm.
-5. QUY TẮC ĐỊNH DẠNG VĂN BẢN (TUYỆT ĐỐI TUÂN THỦ):
+1. TUYỆT ĐỐI KHÔNG NÓI CHUNG CHUNG:
+   - Cấm đưa ra các lời khuyên lý thuyết sáo rỗng (như 'hãy chọn quán có không gian yên tĩnh', 'chọn điểm đến phù hợp sở thích').
+   - Mọi thông tin phải là NGƯỜI THẬT, VIỆC THẬT: Tên quán ăn cụ thể, món ăn signature, địa chỉ rõ ràng, giá tiền tham khảo, phương tiện và cung đường đi.
+
+2. BẮT BUỘC CHÈN ẢNH MINH HỌA TRỰC QUAN TRONG BÀI VIẾT (NHƯ TẠP CHÍ LỮ HÀNH CAO CẤP):
+   - Khi giới thiệu các điểm đến tiêu biểu hoặc trong các chặng của lịch trình, BẮT BUỘC chèn ảnh minh họa chất lượng cao bằng cú pháp Markdown:
+     `![Tên địa điểm](URL_ẢNH)`
+     ngay bên dưới tiêu đề hoặc đoạn mở đầu của điểm đến đó để người xem thấy trực quan sinh động (như review du lịch chuyên nghiệp giống cẩm nang du lịch).
+   - Danh mục URL ảnh Unsplash thực tế chuẩn cho các điểm du lịch lớn:
+     * Cát Bà: ![Đảo Cát Bà](https://images.unsplash.com/photo-1598971861713-54ad16a7e72e?w=800&auto=format&fit=crop)
+     * Vịnh Lan Hạ: ![Vịnh Lan Hạ](https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop)
+     * Bãi tắm Cát Cò: ![Bãi tắm Cát Cò](https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop)
+     * Vườn Quốc Gia Cát Bà: ![Vườn Quốc Gia Cát Bà](https://images.unsplash.com/photo-1448375240586-882707db888b?w=800&auto=format&fit=crop)
+     * Vũng Tàu - Bãi Sau: ![Bãi Sau Vũng Tàu](https://images.unsplash.com/photo-1519046904884-53103b34b206?w=800&auto=format&fit=crop)
+     * Vũng Tàu - Tượng Chúa Kytô Vua: ![Tượng Chúa Kytô Vua](https://images.unsplash.com/photo-1544644181-1484b3fdfc62?w=800&auto=format&fit=crop)
+     * Vũng Tàu - Mũi Nghinh Phong: ![Mũi Nghinh Phong](https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop)
+     * Vũng Tàu - Ngọn Hải Đăng: ![Ngọn Hải Đăng Vũng Tàu](https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=800&auto=format&fit=crop)
+     * Vũng Tàu - Bạch Dinh: ![Bạch Dinh Vũng Tàu](https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?w=800&auto=format&fit=crop)
+     * Hà Nội - Lăng Bác: ![Lăng Chủ tịch Hồ Chí Minh](https://images.unsplash.com/photo-1528181304800-259b08848526?w=800&auto=format&fit=crop)
+     * Hà Nội - Hồ Hoàn Kiếm / Phố Cổ: ![Hồ Hoàn Kiếm](https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&auto=format&fit=crop)
+     * Thái Nguyên - Hồ Núi Cốc: ![Hồ Núi Cốc](https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop)
+     * Thái Nguyên - Đồi chè Tân Cương: ![Đồi chè Tân Cương](https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=800&auto=format&fit=crop)
+     * Đà Nẵng - Bà Nà Hills: ![Bà Nà Hills](https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&auto=format&fit=crop)
+     * Hội An: ![Phố Cổ Hội An](https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&auto=format&fit=crop)
+     * Đà Lạt: ![Đà Lạt](https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?w=800&auto=format&fit=crop)
+     * Phú Quốc: ![Phú Quốc](https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=800&auto=format&fit=crop)
+     * Ninh Bình: ![Tràng An Ninh Bình](https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop)
+     * Sa Pa: ![Sa Pa](https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop)
+     *(Nếu là địa điểm khác, hãy dùng link ảnh Unsplash du lịch chất lượng cao tương thích).*
+
+3. QUY CHUẨN TƯ VẤN LỊCH TRÌNH CHUYÊN SÂU (VD: 3 ngày 2 đêm, 2 ngày 1 đêm, hoặc tour nhiều ngày):
+   - Phải viết THẬT DÀI, CHI TIẾT TỪNG BƯỚC, KHÔNG CẮT XÉN, KHÔNG TÓM TẮT.
+   - Cấu trúc đầy đủ gồm 5 phần:
+     Phần I. TỔNG QUAN HÀNH TRÌNH & THỜI ĐIỂM ĐẸP NHẤT
+     Phần II. LỘ TRÌNH DI CHUYỂN & PHƯƠNG TIỆN (Chỉ rõ cao tốc/quốc lộ nào, thời gian đi, phương tiện xe khách/limousine/xe máy/ô tô, điểm dừng chân ăn sáng và giá tiền).
+     Phần III. GỢI Ý NƠI LƯU TRÚ (Khách sạn/homestay uy tín, khu vực nên thuê, mức giá phòng/đêm).
+     Phần IV. LỊCH TRÌNH CHI TIẾT TỪNG NGÀY:
+       - Tách bạch rõ ràng từng ngày (Ngày 1, Ngày 2, Ngày 3...).
+       - Mỗi ngày chia đủ 4 khung thời gian:
+         * 🌅 **Sáng (07:00 - 11:30)**: Ăn sáng món gì, tên quán, địa chỉ, giá. Điểm tham quan buổi sáng (có chèn ảnh minh họa `![Tên](url)`), đường đi, hoạt động, giá vé.
+         * ☀️ **Trưa (11:30 - 14:00)**: Quán ăn trưa đặc sản, món ngon nổi bật, chi phí. Thời gian nghỉ trưa.
+         * 🌇 **Chiều (14:30 - 18:00)**: Điểm vui chơi / bãi biển / ngắm hoàng hôn (có chèn ảnh), trải nghiệm đặc sắc, góc check-in đẹp.
+         * 🌙 **Tối (18:30 - 22:30)**: Quán ăn tối hải sản/lẩu/nướng (tên quán, địa chỉ, giá), dạo chợ đêm hoặc cafe view đẹp.
+     Phần V. BẢNG DỰ TOÁN TỔNG CHI PHÍ TRỌN GÓI CHO 1 NGƯỜI (Ghi rõ từng mục: Di chuyển, Khách sạn, Ăn uống, Vé tham quan, Phát sinh và Tổng cộng).
+
+4. QUY TẮC ĐỊNH DẠNG VĂN BẢN:
    - TUYỆT ĐỐI KHÔNG xuất hiện dấu thăng đơn lẻ đứng một mình (như '#') trên một dòng riêng.
    - TUYỆT ĐỐI KHÔNG xuất hiện dòng gạch ngang trần '---'.
-   - KHÔNG dùng dấu hoa thị đơn lẻ sai cú pháp (như 'Địa chỉ*:'). Luôn viết đúng: '* 🏠 **Địa chỉ chuẩn xác**:'.
-   - Tiêu đề từng chặng dùng định dạng Markdown chuẩn (ví dụ: '### 1. Điểm khởi đầu:...', '### 2. Trạm dừng chân:...').
-6. HƯỚNG DẪN KHI CÓ LỘ TRÌNH DI CHUYỂN HOẶC HỎI CẦN CHUẨN BỊ GÌ (VD: Từ tỉnh/quận này đi nơi khác, 'cần những gì', 'đi như thế nào'):
-   - BẮT BUỘC có mục tư vấn Lộ trình & Phương tiện di chuyển: Khoảng cách (km), thời gian ước tính, lộ trình cụ thể bằng xe máy / ô tô cá nhân (chỉ rõ tuyến cao tốc, quốc lộ), hoặc xe khách / limousine (tần suất, giá vé tham khảo).
-   - BẮT BUỘC có mục Chuẩn bị & Quy định tại điểm đến: Giấy tờ tùy thân (CCCD/Hộ chiếu), trang phục chuẩn mực (đặc biệt Lăng Bác, đền chùa cấm váy ngắn/quần cộc; quy định gửi hành lý, không quay phim chụp ảnh trong Lăng), lịch mở cửa / đóng cửa (ví dụ: Lăng Bác mở cửa buổi sáng Thứ 3, 4, 5, 7, Chủ Nhật; đóng cửa Thứ 2 và Thứ 6; miễn phí cho công dân Việt Nam), chi phí dự trù.
-   - Nêu các địa điểm tham quan kết hợp tại điểm đến (tương ứng với các thẻ POI bên dưới kèm nút bấm Google Maps).
-7. HƯỚNG DẪN BẮT BUỘC KHI LẬP LỊCH TRÌNH DU LỊCH (VD: 2 ngày 1 đêm, 3 ngày 2 đêm, v.v.):
-   - TUYỆT ĐỐI KHÔNG NÓI CHUNG CHUNG. Phải phân bổ chi tiết THEO TỪNG BUỔI CỤ THỂ (Sáng, Trưa, Chiều, Tối) của từng ngày.
-   - Mỗi buổi phải nêu rõ: Mốc thời gian thực hiện, tên địa điểm cụ thể, quán ăn đặc sản nổi tiếng có thật tại địa phương kèm món ăn tiêu biểu (ví dụ: Bánh khọt Cô Ba Vũng Tàu - 1 Hoàng Hoa Thám, Lẩu cá đuối 40 Trương Công Định, Hải sản Gành Hào...), khoảng giá thực tế và thứ tự di chuyển tối ưu.
-   - Đưa ra bảng ước tính chi phí tổng quan chuyến đi cho 1 người (vé xe/xăng xe, khách sạn, ăn uống, vé tham quan)."""
+   - KHÔNG tự chèn các chuỗi thô '[ 📍 Bản đồ](...) | [+ Thêm vào lịch]' vào text."""
 
             user_prompt = f"""Yêu cầu chuyến đi của khách: {question}
 
 Thông tin phân tích từ Intent Agent:
 {json.dumps(extracted_features, ensure_ascii=False, indent=2)}
 
-Dữ liệu địa điểm thực tế từ PostgreSQL POI Engine ({len(search_results)} điểm):
+Dữ liệu địa điểm thực tế từ POI Engine ({len(search_results)} điểm):
 {json.dumps(search_results, ensure_ascii=False, indent=2)}
 
-QUAN TRỌNG: Hãy phân tích ĐÍCH DANH các địa điểm trên, cung cấp thông tin cụ thể (tên quán, tọa độ/địa chỉ, phong cách, giá cả, cách đi) để khách chọn được ngay, tuyệt đối không nói chung chung!"""
+QUAN TRỌNG: Hãy phân tích ĐÍCH DANH các địa điểm trên, chèn hình ảnh minh họa Markdown ![Tên](url), cung cấp thông tin chi tiết từng mốc giờ (Sáng, Trưa, Chiều, Tối), tên quán ăn, địa chỉ, giá cả, cách đi để khách có thể thực hiện chuyến đi trọn vẹn ngay lập tức!"""
 
         elif language == "english":
             system_prompt = """You are VietTravel AI - Smart Travel Itinerary & Booking Agent.
@@ -794,7 +816,7 @@ IMPORTANT: Respond as a Smart Travel Booking & Itinerary Agent in English with s
                 json_mode=False,
                 enable_web_search=should_web_search,
                 temperature=0.7,
-                max_tokens=800
+                max_tokens=4000
             )
             if gemini_result and gemini_result.get("text"):
                 gemini_answer = gemini_result["text"]
@@ -997,7 +1019,79 @@ def _get_curated_image_and_meta(name: str, category: str, fclass: str, region: s
     cat_lower = f"{category or ''} {fclass or ''}".lower()
     reg_lower = (region or "").lower()
 
-    if any(k in name_lower for k in ["bảo tàng vũ khí", "robert taylor"]):
+    if any(k in name_lower for k in ["tượng chúa", "chúa kytô", "chúa kito", "núi nhỏ"]):
+        img = "https://images.unsplash.com/photo-1596422846543-75c6fc197f07?w=800&auto=format&fit=crop"
+        hours = "07:00 - 17:00 (Hàng ngày)"
+        price = "Miễn phí (Trang phục lịch sự qua gối)"
+        rating = 4.9
+        desc = f"{name} là bức tượng Chúa Kitô Vua lớn nhất châu Á ngự trên đỉnh Núi Nhỏ, cao 32m với hai tay dang rộng 18.3m, bên trong có 133 bậc thang xoắn ốc dẫn lên hai vai ngắm trọn vẹn biển Vũng Tàu."
+    elif any(k in name_lower for k in ["mũi nghinh phong", "cổng trời"]):
+        img = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop"
+        hours = "Cả ngày (Khuyên đi: 05:30 - 18:30)"
+        price = "Miễn phí vào cổng"
+        rating = 4.8
+        desc = f"{name} là mũi đất vươn dài đón gió biển bốn mùa, sở hữu 'Cổng Trời' độc đáo view ôm trọn biển xanh biếc và là điểm ngắm hoàng hôn, bình minh đắt giá nhất Vũng Tàu."
+    elif any(k in name_lower for k in ["hải đăng", "ngọn hải đăng"]):
+        img = "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=800&auto=format&fit=crop"
+        hours = "07:00 - 22:00"
+        price = "Miễn phí tham quan"
+        rating = 4.7
+        desc = f"{name} được xây dựng từ năm 1862, là một trong những ngọn hải đăng cổ xưa nhất Đông Nam Á, cung đường uốn lượn rợp bóng hoa giấy và view ngắm trọn vịnh Gành Rái."
+    elif any(k in name_lower for k in ["bánh khọt", "gốc vú sữa", "cô ba vũng tàu"]):
+        img = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop"
+        hours = "07:00 - 22:00"
+        price = "60.000đ - 120.000đ/phần"
+        rating = 4.8
+        desc = f"{name} phục vụ món bánh khọt tôm vàng giòn rụm nức tiếng, ăn kèm đu đủ bào sợi chua ngọt, đĩa rau sống tươi sạch và nước mắm ớt pha gia truyền đậm đà."
+    elif any(k in name_lower for k in ["lẩu cá đuối", "cá đuối"]):
+        img = "https://images.unsplash.com/photo-1544025162-d76694265947?w=800&auto=format&fit=crop"
+        hours = "10:00 - 23:00"
+        price = "150.000đ - 250.000đ/nồi"
+        rating = 4.8
+        desc = f"{name} nổi tiếng với nồi lẩu cá đuối măng chua sôi sùng sục, thịt cá đuối tươi ngọt giòn sụn chấm nước mắm ớt nguyên chất, hương vị chua cay hấp dẫn khó cưỡng."
+    elif any(k in name_lower for k in ["vịnh lan hạ", "cát bà", "đảo khỉ"]):
+        img = "https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop"
+        hours = "07:00 - 17:30"
+        price = "Tour thuyền 250.000đ - 450.000đ"
+        rating = 4.9
+        desc = f"{name} là kỳ quan vịnh ngọc với hơn 400 hòn đảo đá vôi kỳ vĩ phủ kín thảm thực vật xanh mướt, nước biển trong vắt lý tưởng để chèo thuyền kayak và lặn ngắm san hô."
+    elif any(k in name_lower for k in ["núi cốc", "hồ núi cốc", "tân cương"]):
+        img = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop"
+        hours = "07:00 - 18:00"
+        price = "130.000đ/vé trọn gói"
+        rating = 4.8
+        desc = f"{name} là danh thắng huyền thoại nổi tiếng đất chè Thái Nguyên với mặt hồ mênh mông, 89 hòn đảo thơ mộng và những đồi chè Tân Cương xanh ngát chân trời."
+    elif any(k in name_lower for k in ["bà nà", "cầu vàng", "golden bridge"]):
+        img = "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&auto=format&fit=crop"
+        hours = "07:00 - 21:00"
+        price = "Cáp treo từ 850.000đ/vé"
+        rating = 4.9
+        desc = f"{name} là kiệt tác kiến trúc nổi tiếng thế giới với đôi bàn tay Phật khổng lồ nâng đỡ dải lụa vàng giữa mây trời Bà Nà, tạo nên trải nghiệm bồng lai tiên cảnh."
+    elif any(k in name_lower for k in ["cầu rồng", "sông hàn"]):
+        img = "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&auto=format&fit=crop"
+        hours = "Cả ngày (Phun lửa & nước: 21:00 T7, CN)"
+        price = "Miễn phí"
+        rating = 4.8
+        desc = f"{name} là biểu tượng kiến trúc hiện đại của Đà Nẵng bắc qua sông Hàn thơ mộng, thu hút hàng vạn du khách chiêm ngưỡng màn phun lửa, phun nước sống động cuối tuần."
+    elif any(k in name_lower for k in ["phố cổ hội an", "chùa cầu"]):
+        img = "https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?w=800&auto=format&fit=crop"
+        hours = "Cả ngày"
+        price = "Vé tham quan phố cổ 80.000đ"
+        rating = 4.9
+        desc = f"{name} là di sản văn hóa thế giới UNESCO với những dãy nhà cổ sơn vàng, hoa giấy rực rỡ và dòng sông Hoài lung linh hoa đăng huyền ảo mỗi khi đêm về."
+    elif any(k in name_lower for k in ["hồ xuân hương", "đà lạt", "lâm viên"]):
+        img = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop"
+        hours = "Cả ngày"
+        price = "Miễn phí"
+        rating = 4.8
+        desc = f"{name} là trái tim thơ mộng của xứ sở sương mù Đà Lạt, nơi lý tưởng để đi dạo, đạp vịt ngắm hoàng hôn buông xuống mặt hồ phẳng lặng trong tiết trời se lạnh."
+    elif any(k in name_lower for k in ["tràng an", "tam cốc", "hang múa"]):
+        img = "https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop"
+        hours = "07:00 - 17:00"
+        price = "Vé thuyền 250.000đ"
+        rating = 4.9
+        desc = f"{name} là danh thắng kỳ vĩ của Ninh Bình được UNESCO công nhận là di sản kép, nơi du khách ngồi thuyền nan len lỏi qua các hang động đá vôi triệu năm tuổi."
+    elif any(k in name_lower for k in ["bảo tàng vũ khí", "robert taylor"]):
         img = "https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?w=800&auto=format&fit=crop"
         hours = "08:00 - 17:00 (Hàng ngày)"
         price = "70.000đ - 100.000đ/vé"
@@ -1053,6 +1147,670 @@ def _get_curated_image_and_meta(name: str, category: str, fclass: str, region: s
         desc = f"{name} là điểm tham quan hấp dẫn tại {region}, sở hữu vị trí thuận lợi và tọa độ GPS định vị chuẩn xác để bạn thêm vào lịch trình khám phá."
 
     return img, hours, price, rating, desc
+
+
+AGENT_DYNAMIC_CURATED_HUBS: Dict[str, List[Dict[str, Any]]] = {
+    "vũng tàu": [
+        {
+            "id": "hub_vt_1",
+            "ten_dia_diem": "Tượng Chúa Kytô Vua (Núi Nhỏ)",
+            "mo_ta": "Biểu tượng du lịch số 1 Vũng Tàu, tượng Chúa Kitô Vua cao 32m ngự trên đỉnh Núi Nhỏ. Du khách leo 847 bậc thang đá và 133 bậc thang xoắn ốc bên trong tượng để lên hai vai ngắm toàn cảnh biển Đông bao la.",
+            "loai_dia_diem": "Điểm tham quan / Biểu tượng",
+            "khu_vuc": "Vũng Tàu",
+            "dia_chi": "02 Hạ Long, Phường 2, TP. Vũng Tàu",
+            "latitude": 10.3263,
+            "longitude": 107.0845,
+            "google_maps_url": "https://www.google.com/maps?q=10.326300,107.084500",
+            "distance_km": 1.2,
+            "similarity": 0.99,
+            "image_url": "https://images.unsplash.com/photo-1596422846543-75c6fc197f07?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:00 - 17:00 (Hàng ngày)",
+            "gia_ve": "Miễn phí (Yêu cầu trang phục lịch sự qua gối)",
+            "danh_gia": 4.9,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_vt_2",
+            "ten_dia_diem": "Mũi Nghinh Phong & Cổng Trời",
+            "mo_ta": "Mũi đất vươn dài đón gió biển bốn mùa, phía trước là biển xanh vô tận, sau lưng là vách núi đá sừng sững. Nơi đây có 'Cổng Trời' màu vàng cổ điển view nhìn thẳng ra Hòn Bà và là tọa độ săn hoàng hôn đẹp nhất Vũng Tàu.",
+            "loai_dia_diem": "Danh lam thắng cảnh / Check-in",
+            "khu_vuc": "Vũng Tàu",
+            "dia_chi": "01 Hạ Long, Phường 2, TP. Vũng Tàu",
+            "latitude": 10.3235,
+            "longitude": 107.0782,
+            "google_maps_url": "https://www.google.com/maps?q=10.323500,107.078200",
+            "distance_km": 1.5,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "Mở cả ngày (Khuyên đi: 05:30 - 18:30)",
+            "gia_ve": "Miễn phí vào cổng",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_vt_3",
+            "ten_dia_diem": "Bãi Sau (Bãi Thùy Vân)",
+            "mo_ta": "Bãi tắm trung tâm sầm uất và đẹp nhất Vũng Tàu dài hơn 8km với bãi cát thoai thoải, sóng êm và làn nước mát rượi. Tập trung nhiều khách sạn, quảng trường Cột Cờ và các hoạt động thể thao mạo hiểm trên biển.",
+            "loai_dia_diem": "Bãi biển / Vui chơi giải trí",
+            "khu_vuc": "Vũng Tàu",
+            "dia_chi": "Đường Thùy Vân, Phường Thắng Tam, TP. Vũng Tàu",
+            "latitude": 10.3364,
+            "longitude": 107.0911,
+            "google_maps_url": "https://www.google.com/maps?q=10.336400,107.091100",
+            "distance_km": 0.8,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1519046904884-53103b34b206?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "Tắm biển: 05:00 - 18:30",
+            "gia_ve": "Tắm biển miễn phí (Ghế dù ~50k-80k)",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_vt_4",
+            "ten_dia_diem": "Ngọn Hải Đăng Vũng Tàu",
+            "mo_ta": "Ngọn hải đăng cổ kính xây từ năm 1862 trên đỉnh Núi Nhỏ ở độ cao 170m. Cung đường lên hải đăng uốn lượn rợp bóng cây hoa giấy, từ đài quan sát có thể thu trọn toàn cảnh thành phố biển và vịnh Gành Rái lung linh.",
+            "loai_dia_diem": "Di tích / Ngắm cảnh",
+            "khu_vuc": "Vũng Tàu",
+            "dia_chi": "Đỉnh Núi Nhỏ, Phường 2, TP. Vũng Tàu",
+            "latitude": 10.3340,
+            "longitude": 107.0760,
+            "google_maps_url": "https://www.google.com/maps?q=10.334000,107.076000",
+            "distance_km": 1.4,
+            "similarity": 0.97,
+            "image_url": "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:00 - 22:00",
+            "gia_ve": "Miễn phí tham quan",
+            "danh_gia": 4.7,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_vt_5",
+            "ten_dia_diem": "Bánh Khọt Cô Ba Vũng Tàu",
+            "mo_ta": "Quán bánh khọt trứ danh lâu đời bậc nhất Vũng Tàu. Bánh đổ khuôn gang vàng rụm, giòn tan bên ngoài, nhân tôm tươi ngọt thịt hoặc mực sữa, cuốn bánh tráng rau cải xanh, đồ chua và chấm nước mắm ớt pha chuẩn vị.",
+            "loai_dia_diem": "Ẩm thực & Quán ăn đặc sản",
+            "khu_vuc": "Vũng Tàu",
+            "dia_chi": "01 Hoàng Hoa Thám, Phường 3, TP. Vũng Tàu",
+            "latitude": 10.3448,
+            "longitude": 107.0754,
+            "google_maps_url": "https://www.google.com/maps?q=10.344800,107.075400",
+            "distance_km": 0.5,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:00 - 22:00",
+            "gia_ve": "60.000đ - 120.000đ/đĩa",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_vt_6",
+            "ten_dia_diem": "Lẩu Cá Đuối Út Mười",
+            "mo_ta": "Món ăn 'quốc hồn quốc túy' không thể bỏ qua khi tới Vũng Tàu. Nồi lẩu bốc khói nghi ngút với nước dùng măng chua cay the the đậm đà, thịt cá đuối tươi rói ngọt béo, sụn giòn sần sật chấm cùng nước mắm ớt cay xé lưỡi.",
+            "loai_dia_diem": "Ẩm thực & Quán ăn đặc sản",
+            "khu_vuc": "Vũng Tàu",
+            "dia_chi": "16A Trương Công Định, Phường 1, TP. Vũng Tàu",
+            "latitude": 10.3468,
+            "longitude": 107.0792,
+            "google_maps_url": "https://www.google.com/maps?q=10.346800,107.079200",
+            "distance_km": 0.6,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1544025162-d76694265947?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "10:00 - 23:00",
+            "gia_ve": "160.000đ - 260.000đ/nồi",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        }
+    ],
+    "cát bà": [
+        {
+            "id": "hub_cb_1",
+            "ten_dia_diem": "Vịnh Lan Hạ & Đảo Khỉ",
+            "mo_ta": "Kỳ quan vịnh ngọc liền kề Hạ Long với hơn 400 hòn đảo đá vôi kỳ vĩ phủ cây xanh, làn nước xanh ngọc bích êm ả. Du khách trải nghiệm du thuyền, chèo thuyền kayak qua hang Sáng Tối và tắm biển tại bãi cát tự nhiên hoang sơ.",
+            "loai_dia_diem": "Danh lam thắng cảnh / Biển đảo",
+            "khu_vuc": "Cát Bà, Hải Phòng",
+            "dia_chi": "Vịnh Lan Hạ, Quần đảo Cát Bà, Huyện Cát Hải, Hải Phòng",
+            "latitude": 20.7300,
+            "longitude": 107.0600,
+            "google_maps_url": "https://www.google.com/maps?q=20.730000,107.060000",
+            "distance_km": 1.5,
+            "similarity": 0.99,
+            "image_url": "https://images.unsplash.com/photo-1528127269322-539801943592?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:00 - 17:30",
+            "gia_ve": "Tour du thuyền 250.000đ - 450.000đ/người",
+            "danh_gia": 4.9,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_cb_2",
+            "ten_dia_diem": "Vườn Quốc Gia Cát Bà & Đỉnh Ngự Lâm",
+            "mo_ta": "Khu dự trữ sinh quyển thế giới với hệ sinh thái rừng nhiệt đới nguyên sinh bạt ngàn và loài voọc Cát Bà quý hiếm. Cung đường trekking xuyên rừng kim giao lên đỉnh Ngự Lâm đem đến góc nhìn 360 độ ngắm trọn non nước điệp trùng.",
+            "loai_dia_diem": "Vườn quốc gia / Trekking",
+            "khu_vuc": "Cát Bà, Hải Phòng",
+            "dia_chi": "Thị trấn Cát Bà, Huyện Cát Hải, Hải Phòng",
+            "latitude": 20.7981,
+            "longitude": 106.9942,
+            "google_maps_url": "https://www.google.com/maps?q=20.798100,106.994200",
+            "distance_km": 11.0,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1448375240586-882707db888b?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:30 - 17:00",
+            "gia_ve": "80.000đ/vé người lớn",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_cb_3",
+            "ten_dia_diem": "Bãi Tắm Cát Cò 1, 2, 3",
+            "mo_ta": "Bộ ba bãi tắm tự nhiên tựa lưng vào vách núi đá vôi tuyệt đẹp nối liền nhau bởi cây cầu gỗ ven biển uốn lượn. Bãi Cát Cò 1 rộng và sôi động nhất, bãi Cát Cò 2 yên tĩnh lãng mạn, sóng êm nước trong vắt.",
+            "loai_dia_diem": "Bãi biển / Nghỉ dưỡng",
+            "khu_vuc": "Cát Bà, Hải Phòng",
+            "dia_chi": "Khu 1, Thị trấn Cát Bà, Huyện Cát Hải, Hải Phòng",
+            "latitude": 20.7180,
+            "longitude": 107.0490,
+            "google_maps_url": "https://www.google.com/maps?q=20.718000,107.049000",
+            "distance_km": 0.8,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "Tắm biển: 06:00 - 18:30",
+            "gia_ve": "Tắm biển tự do miễn phí",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_cb_4",
+            "ten_dia_diem": "Làng Chài Cổ Việt Hải",
+            "mo_ta": "Ngôi làng cổ bình yên ẩn mình hoàn toàn giữa thung lũng của Vườn Quốc Gia Cát Bà. Du khách đạp xe dọc theo con đường rợp bóng cây xanh, tìm hiểu cuộc sống ngư dân đảo ngọc và trải nghiệm massage cá suối tự nhiên cực thư giãn.",
+            "loai_dia_diem": "Làng văn hóa / Sinh thái",
+            "khu_vuc": "Cát Bà, Hải Phòng",
+            "dia_chi": "Xã Việt Hải, Huyện Cát Hải, Hải Phòng",
+            "latitude": 20.7745,
+            "longitude": 107.0390,
+            "google_maps_url": "https://www.google.com/maps?q=20.774500,107.039000",
+            "distance_km": 6.5,
+            "similarity": 0.97,
+            "image_url": "https://images.unsplash.com/photo-1598971861713-54ad16a7e72e?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "08:00 - 18:00",
+            "gia_ve": "50.000đ/vé vào làng",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_cb_5",
+            "ten_dia_diem": "Pháo Đài Thần Công (Cao Điểm 177)",
+            "mo_ta": "Di tích lịch sử quân sự nằm trên đỉnh ngọn đồi cao 177m với hai khẩu pháo đối hải khổng lồ thời kháng chiến. Nơi đây sở hữu quán cà phê ngắm toàn cảnh vịnh Lan Hạ và đón hoàng hôn buông xuống biển đẹp nao lòng.",
+            "loai_dia_diem": "Di tích lịch sử / Ngắm hoàng hôn",
+            "khu_vuc": "Cát Bà, Hải Phòng",
+            "dia_chi": "239 Cái Bèo, Thị trấn Cát Bà, Cát Hải, Hải Phòng",
+            "latitude": 20.7150,
+            "longitude": 107.0420,
+            "google_maps_url": "https://www.google.com/maps?q=20.715000,107.042000",
+            "distance_km": 1.2,
+            "similarity": 0.97,
+            "image_url": "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:30 - 18:00",
+            "gia_ve": "40.000đ/vé",
+            "danh_gia": 4.7,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_cb_6",
+            "ten_dia_diem": "Nhà Hàng Bè Nổi & Chợ Đêm Cát Bà",
+            "mo_ta": "Trải nghiệm ẩm thực biển độc đáo trên các bè nổi bồng bềnh giữa sóng nước. Thưởng thức đặc sản tu hài nướng mỡ hành, bề bề rang muối, cá song hấp xì dầu và mực trứng tươi sống vừa vớt tại lồng nuôi.",
+            "loai_dia_diem": "Ẩm thực & Hải sản tươi sống",
+            "khu_vuc": "Cát Bà, Hải Phòng",
+            "dia_chi": "Bến Bèo, Thị trấn Cát Bà, Cát Hải, Hải Phòng",
+            "latitude": 20.7240,
+            "longitude": 107.0460,
+            "google_maps_url": "https://www.google.com/maps?q=20.724000,107.046000",
+            "distance_km": 0.9,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "10:00 - 23:00",
+            "gia_ve": "180.000đ - 350.000đ/người",
+            "danh_gia": 4.7,
+            "language": "vietnamese"
+        }
+    ],
+    "hà nội": [
+        {
+            "id": "hub_hn_1",
+            "ten_dia_diem": "Lăng Chủ tịch Hồ Chí Minh & Quảng trường Ba Đình",
+            "mo_ta": "Trái tim của thủ đô Hà Nội ngàn năm văn hiến, nơi an nghỉ vĩnh hằng của Chủ tịch Hồ Chí Minh vĩ đại. Cụm di tích gồm Lăng Bác, Nhà sàn, Ao cá Bác Hồ, Chùa Một Cột và lễ Thượng cờ (06:00) / Hạ cờ (21:00) trang nghiêm.",
+            "loai_dia_diem": "Di tích lịch sử / Biểu tượng quốc gia",
+            "khu_vuc": "Ba Đình, Hà Nội",
+            "dia_chi": "02 Hùng Vương, Điện Biên, Ba Đình, Hà Nội",
+            "latitude": 21.0368,
+            "longitude": 105.8346,
+            "google_maps_url": "https://www.google.com/maps?q=21.036800,105.834600",
+            "distance_km": 0.2,
+            "similarity": 0.99,
+            "image_url": "https://images.unsplash.com/photo-1528181304800-259b08848526?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:30 - 10:30 (Sáng T3, T4, T5, T7, CN; đóng cửa T2, T6)",
+            "gia_ve": "Miễn phí với công dân Việt Nam",
+            "danh_gia": 4.9,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_hn_2",
+            "ten_dia_diem": "Hồ Hoàn Kiếm (Hồ Gươm) & Đền Ngọc Sơn",
+            "mo_ta": "Viên ngọc xanh giữa lòng thủ đô, gắn liền với truyền thuyết vua Lê Lợi trả gươm báu. Điểm đến nổi tiếng với Tháp Rùa cổ kính, Cầu Thê Húc cong cong màu son dẫn vào Đền Ngọc Sơn và phố đi bộ cuối tuần sôi động.",
+            "loai_dia_diem": "Danh lam thắng cảnh / Văn hóa",
+            "khu_vuc": "Hoàn Kiếm, Hà Nội",
+            "dia_chi": "Đinh Tiên Hoàng, Hàng Trống, Hoàn Kiếm, Hà Nội",
+            "latitude": 21.0285,
+            "longitude": 105.8542,
+            "google_maps_url": "https://www.google.com/maps?q=21.028500,105.854200",
+            "distance_km": 1.5,
+            "similarity": 0.99,
+            "image_url": "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "Cả ngày (Đền Ngọc Sơn: 07:00 - 18:00)",
+            "gia_ve": "30.000đ/vé vào Đền Ngọc Sơn",
+            "danh_gia": 4.9,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_hn_3",
+            "ten_dia_diem": "Văn Miếu - Quốc Tử Giám",
+            "mo_ta": "Trường đại học đầu tiên của Việt Nam xây dựng từ năm 1070, biểu tượng sáng ngời của truyền thống hiếu học dân tộc. Khuôn viên rợp bóng cổ thụ, nổi bật với Khuê Văn Các, 82 bia Tiến sĩ trên lưng rùa đá và nhà Thái Học.",
+            "loai_dia_diem": "Di tích văn hóa / Lịch sử",
+            "khu_vuc": "Đống Đa, Hà Nội",
+            "dia_chi": "58 Quốc Tử Giám, Văn Miếu, Đống Đa, Hà Nội",
+            "latitude": 21.0274,
+            "longitude": 105.8355,
+            "google_maps_url": "https://www.google.com/maps?q=21.027400,105.835500",
+            "distance_km": 1.2,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1507842229452-779836376822?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "08:00 - 17:00 (Hàng ngày)",
+            "gia_ve": "30.000đ/vé người lớn",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_hn_4",
+            "ten_dia_diem": "Hoàng Thành Thăng Long",
+            "mo_ta": "Di sản văn hóa thế giới UNESCO với bề dày lịch sử hơn 13 thế kỷ, từng là trung tâm quyền lực chính trị qua các triều đại Lý, Trần, Lê, Nguyễn. Nổi bật với Đoan Môn, Điện Kính Thiên, Hậu Lâu và khu khảo cổ 18 Hoàng Diệu.",
+            "loai_dia_diem": "Di sản thế giới UNESCO / Di tích",
+            "khu_vuc": "Ba Đình, Hà Nội",
+            "dia_chi": "19C Hoàng Diệu, Điện Biên, Ba Đình, Hà Nội",
+            "latitude": 21.0358,
+            "longitude": 105.8406,
+            "google_maps_url": "https://www.google.com/maps?q=21.035800,105.840600",
+            "distance_km": 0.6,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1544644181-1484b3fdfc62?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "08:00 - 17:00",
+            "gia_ve": "30.000đ/vé",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_hn_5",
+            "ten_dia_diem": "Phố Cổ Hà Nội (36 Phố Phường) & Chợ Đồng Xuân",
+            "mo_ta": "Mê cung phố cổ rêu phong đậm đà bản sắc Tràng An, nơi mỗi con phố lưu giữ nghề truyền thống: Hàng Bạc, Hàng Mã, Hàng Gai... Thiên đường ẩm thực đường phố về đêm với nem chua rán, bún chả, cà phê trứng Giảng trứ danh.",
+            "loai_dia_diem": "Văn hóa phố cổ / Mua sắm & Ẩm thực",
+            "khu_vuc": "Hoàn Kiếm, Hà Nội",
+            "dia_chi": "Khu vực Phố Cổ, Hoàn Kiếm, Hà Nội",
+            "latitude": 21.0345,
+            "longitude": 105.8500,
+            "google_maps_url": "https://www.google.com/maps?q=21.034500,105.850000",
+            "distance_km": 1.6,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "Cả ngày (Chợ đêm: Tối T6, T7, CN)",
+            "gia_ve": "Miễn phí dạo phố",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_hn_6",
+            "ten_dia_diem": "Phở Gia Truyền Bát Đàn & Bún Chả Hương Liên",
+            "mo_ta": "Tinh hoa ẩm thực Hà Thành nức tiếng. Phở Bát Đàn đậm đà nước dùng ninh từ xương ống bò trong vắt ngọt thanh tự nhiên; Bún Chả Hương Liên (nơi cựu Tổng thống Obama từng thưởng thức) với chả viên nướng than hoa thơm lừng.",
+            "loai_dia_diem": "Ẩm thực & Quán ăn truyền thống",
+            "khu_vuc": "Hoàn Kiếm, Hà Nội",
+            "dia_chi": "49 Bát Đàn, Cửa Đông, Hoàn Kiếm, Hà Nội",
+            "latitude": 21.0335,
+            "longitude": 105.8480,
+            "google_maps_url": "https://www.google.com/maps?q=21.033500,105.848000",
+            "distance_km": 1.4,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "06:30 - 20:30",
+            "gia_ve": "50.000đ - 90.000đ/bát",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        }
+    ],
+    "thái nguyên": [
+        {
+            "id": "hub_tn_1",
+            "ten_dia_diem": "Khu Du Lịch Hồ Núi Cốc",
+            "mo_ta": "Khu du lịch sinh thái huyền thoại nổi tiếng nhất xứ trà Thái Nguyên gắn liền mối tình chàng Cốc - nàng Công. Du khách ngồi thuyền ngắm 89 hòn đảo thơ mộng giữa lòng hồ, khám phá công viên nước, Chùa Thác Vàng và hang động kỳ ảo.",
+            "loai_dia_diem": "Khu du lịch sinh thái / Hồ nước",
+            "khu_vuc": "Đại Từ, Thái Nguyên",
+            "dia_chi": "Xã Tân Thái, Huyện Đại Từ, Thái Nguyên",
+            "latitude": 21.5794,
+            "longitude": 105.7100,
+            "google_maps_url": "https://www.google.com/maps?q=21.579400,105.710000",
+            "distance_km": 16.0,
+            "similarity": 0.99,
+            "image_url": "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:00 - 18:00 (Hàng ngày)",
+            "gia_ve": "130.000đ/vé trọn gói tham quan",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_tn_2",
+            "ten_dia_diem": "Không Gian Văn Hóa Trà Tân Cương",
+            "mo_ta": "Vùng đất cội nguồn của 'Đệ nhất danh trà' Việt Nam. Nơi đây sở hữu những nương chè xanh mướt mát uốn lượn hình mâm xôi, không gian trưng bày quy trình chế biến trà thủ công và khu thưởng thức các loại trà nõn tôm, trà đinh cao cấp.",
+            "loai_dia_diem": "Văn hóa trà / Check-in sinh thái",
+            "khu_vuc": "Tân Cương, Thái Nguyên",
+            "dia_chi": "Xã Tân Cương, TP. Thái Nguyên, Thái Nguyên",
+            "latitude": 21.5540,
+            "longitude": 105.7820,
+            "google_maps_url": "https://www.google.com/maps?q=21.554000,105.782000",
+            "distance_km": 8.0,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:30 - 17:30",
+            "gia_ve": "Miễn phí trải nghiệm (Mua trà theo nhu cầu)",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_tn_3",
+            "ten_dia_diem": "Bảo Tàng Văn Hóa Các Dân Tộc Việt Nam",
+            "mo_ta": "Bảo tàng quốc gia nằm tại trung tâm thành phố lưu giữ hơn 40.000 tài liệu hiện vật gốc quý giá phản ánh toàn diện đời sống, trang phục, phong tục và văn hóa tâm linh của 54 dân tộc anh em khắp mọi miền đất nước.",
+            "loai_dia_diem": "Bảo tàng / Văn hóa dân tộc",
+            "khu_vuc": "TP. Thái Nguyên",
+            "dia_chi": "01 Đội Cấn, Trưng Vương, TP. Thái Nguyên",
+            "latitude": 21.5936,
+            "longitude": 105.8427,
+            "google_maps_url": "https://www.google.com/maps?q=21.593600,105.842700",
+            "distance_km": 0.5,
+            "similarity": 0.97,
+            "image_url": "https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:30 - 17:00 (T3 - CN)",
+            "gia_ve": "30.000đ/vé người lớn",
+            "danh_gia": 4.7,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_tn_4",
+            "ten_dia_diem": "Suối Cửa Tử (Hoàng Nông, Đại Từ)",
+            "mo_ta": "Điểm đến trekking dã ngoại hoang sơ tuyệt đỉnh dưới chân dãy Tam Đảo. Dòng suối trong vắt len lỏi giữa những vách đá rêu phong kỳ vĩ, nhiều vũng nước tự nhiên mát lạnh sâu trong lòng rừng cho trải nghiệm trượt thác mạo hiểm.",
+            "loai_dia_diem": "Trekking / Suối thác thiên nhiên",
+            "khu_vuc": "Đại Từ, Thái Nguyên",
+            "dia_chi": "Xã Hoàng Nông, Huyện Đại Từ, Thái Nguyên",
+            "latitude": 21.5300,
+            "longitude": 105.6200,
+            "google_maps_url": "https://www.google.com/maps?q=21.530000,105.620000",
+            "distance_km": 28.0,
+            "similarity": 0.97,
+            "image_url": "https://images.unsplash.com/photo-1448375240586-882707db888b?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:00 - 17:00",
+            "gia_ve": "Miễn phí (Nên thuê porter địa phương ~150.000đ)",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_tn_5",
+            "ten_dia_diem": "Chùa Hang (Kim Sơn Tự, Đồng Hỷ)",
+            "mo_ta": "Di tích lịch sử và danh lam cổ tự thiêng liêng có từ thế kỷ 11. Chùa tọa lạc trong 3 hang đá vôi lớn của núi Huyền Vũ, thạch nhũ buông rủ huyền bí và không gian thanh tịnh bao quanh bởi non xanh nước biếc.",
+            "loai_dia_diem": "Chùa cổ / Tâm linh lịch sử",
+            "khu_vuc": "Đồng Hỷ, Thái Nguyên",
+            "dia_chi": "Phường Chùa Hang, TP. Thái Nguyên, Thái Nguyên",
+            "latitude": 21.6180,
+            "longitude": 105.8550,
+            "google_maps_url": "https://www.google.com/maps?q=21.618000,105.855000",
+            "distance_km": 3.2,
+            "similarity": 0.96,
+            "image_url": "https://images.unsplash.com/photo-1544644181-1484b3fdfc62?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "06:30 - 18:30",
+            "gia_ve": "Miễn phí vãn cảnh",
+            "danh_gia": 4.7,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_tn_6",
+            "ten_dia_diem": "Làng Nghề Bánh Chưng Bờ Đậu & Nem Chua Đại Từ",
+            "mo_ta": "Thủ phủ ẩm thực truyền thống nức tiếng vùng Đông Bắc. Bánh chưng Bờ Đậu được gói từ nếp nương Định Hóa hạt mẩy dẻo thơm, luộc bằng nước giếng đá trong vắt kết hợp vị béo ngậy của thịt lợn bản và vị cay nồng của hạt tiêu sọ.",
+            "loai_dia_diem": "Ẩm thực & Đặc sản làng nghề",
+            "khu_vuc": "Phú Lương, Thái Nguyên",
+            "dia_chi": "Ngã ba Bờ Đậu, Xã Cổ Lũng, Phú Lương, Thái Nguyên",
+            "latitude": 21.6250,
+            "longitude": 105.7720,
+            "google_maps_url": "https://www.google.com/maps?q=21.625000,105.772000",
+            "distance_km": 7.5,
+            "similarity": 0.97,
+            "image_url": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "06:00 - 21:00",
+            "gia_ve": "40.000đ - 70.000đ/chiếc bánh chưng",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        }
+    ],
+    "đà nẵng": [
+        {
+            "id": "hub_dn_1",
+            "ten_dia_diem": "Bà Nà Hills & Cầu Vàng",
+            "mo_ta": "Kỳ quan 'đường lên tiên cảnh' với tuyến cáp treo đạt nhiều kỷ lục Guinness. Nổi bật với Cầu Vàng được nâng đỡ bởi hai bàn tay khổng lồ giữa biển mây, làng Pháp cổ kính, hầm rượu Debay và công viên Fantasy Park.",
+            "loai_dia_diem": "Khu du lịch / Biểu tượng thế giới",
+            "khu_vuc": "Đà Nẵng",
+            "dia_chi": "Thôn An Sơn, Xã Hòa Ninh, Huyện Hòa Vang, Đà Nẵng",
+            "latitude": 15.9980,
+            "longitude": 107.9880,
+            "google_maps_url": "https://www.google.com/maps?q=15.998000,107.988000",
+            "distance_km": 25.0,
+            "similarity": 0.99,
+            "image_url": "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:00 - 21:00",
+            "gia_ve": "Cáp treo 900.000đ/người lớn",
+            "danh_gia": 4.9,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dn_2",
+            "ten_dia_diem": "Bán Đảo Sơn Trà & Chùa Linh Ứng",
+            "mo_ta": "'Lá phổi xanh' của Đà Nẵng với Chùa Linh Ứng Bãi Bụt uy nghiêm, nơi có tượng Phật Bà Quan Âm cao 67m hướng ra biển Đông che chở cho ngư dân. Cung đường ngắm voọc chà vá chân nâu và đỉnh Bàn Cờ lộng gió.",
+            "loai_dia_diem": "Tâm linh / Thiên nhiên bán đảo",
+            "khu_vuc": "Sơn Trà, Đà Nẵng",
+            "dia_chi": "Hoàng Sa, Bán đảo Sơn Trà, Thọ Quang, Sơn Trà, Đà Nẵng",
+            "latitude": 16.1000,
+            "longitude": 108.2780,
+            "google_maps_url": "https://www.google.com/maps?q=16.100000,108.278000",
+            "distance_km": 10.0,
+            "similarity": 0.99,
+            "image_url": "https://images.unsplash.com/photo-1544644181-1484b3fdfc62?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "06:00 - 18:30",
+            "gia_ve": "Miễn phí vào chùa",
+            "danh_gia": 4.9,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dn_3",
+            "ten_dia_diem": "Cầu Rồng & Cầu Tình Yêu Sông Hàn",
+            "mo_ta": "Cây cầu biểu tượng vươn mình ra biển lớn của thành phố đáng sống nhất Việt Nam. Vào 21:00 tối thứ Bảy và Chủ Nhật, Cầu Rồng trình diễn màn phun lửa và phun nước độc đáo thu hút đông đảo du khách.",
+            "loai_dia_diem": "Kiến trúc / Check-in sông Hàn",
+            "khu_vuc": "Hải Châu, Đà Nẵng",
+            "dia_chi": "Đường Nguyễn Văn Linh, Phước Ninh, Hải Châu, Đà Nẵng",
+            "latitude": 16.0610,
+            "longitude": 108.2270,
+            "google_maps_url": "https://www.google.com/maps?q=16.061000,108.227000",
+            "distance_km": 1.0,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "Cả ngày (Phun lửa 21:00 T7, CN)",
+            "gia_ve": "Miễn phí",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dn_4",
+            "ten_dia_diem": "Bãi Biển Mỹ Khê",
+            "mo_ta": "Được tạp chí Forbes vinh danh là một trong những bãi biển quyến rũ nhất hành tinh. Bờ cát trắng mịn trải dài thoai thoải, nước biển trong xanh ấm áp quanh năm cùng hàng dừa nghiêng bóng thơ mộng.",
+            "loai_dia_diem": "Bãi biển / Thể thao dưới nước",
+            "khu_vuc": "Ngũ Hành Sơn, Đà Nẵng",
+            "dia_chi": "Võ Nguyên Giáp, Phước Mỹ, Sơn Trà, Đà Nẵng",
+            "latitude": 16.0590,
+            "longitude": 108.2460,
+            "google_maps_url": "https://www.google.com/maps?q=16.059000,108.246000",
+            "distance_km": 2.5,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "Cả ngày",
+            "gia_ve": "Tắm biển miễn phí",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dn_5",
+            "ten_dia_diem": "Ngũ Hành Sơn & Động Huyền Không",
+            "mo_ta": "Quần thể 5 ngọn núi đá vôi kỳ bí mang tên hệ ngũ hành Kim - Mộc - Thủy - Hỏa - Thổ. Nổi bật với Động Huyền Không ánh sáng rọi qua vòm đá linh thiêng, Vọng Giang Đài và làng nghề điêu khắc đá Non Nước hơn 400 năm.",
+            "loai_dia_diem": "Thắng cảnh / Di tích tâm linh",
+            "khu_vuc": "Ngũ Hành Sơn, Đà Nẵng",
+            "dia_chi": "81 Huyền Trân Công Chúa, Hòa Hải, Ngũ Hành Sơn, Đà Nẵng",
+            "latitude": 16.0028,
+            "longitude": 108.2497,
+            "google_maps_url": "https://www.google.com/maps?q=16.002800,108.249700",
+            "distance_km": 8.0,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1528181304800-259b08848526?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:00 - 17:30",
+            "gia_ve": "40.000đ/vé (Thang máy 15.000đ/lượt)",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dn_6",
+            "ten_dia_diem": "Bánh Tráng Cuốn Thịt Heo Trần & Chợ Cồn",
+            "mo_ta": "Món ăn đặc sản thương hiệu Đà Nẵng với lát thịt heo hai đầu da luộc mềm ngọt, cuốn cùng bánh tráng phơi sương, mì lá và đĩa rau sống tươi non hơn 10 loại rau rừng, chấm mắm nêm cá cơm nguyên chất thơm cay nồng nàn.",
+            "loai_dia_diem": "Ẩm thực & Món ngon miền Trung",
+            "khu_vuc": "Hải Châu, Đà Nẵng",
+            "dia_chi": "04 Lê Duẩn, Hải Châu 1, Hải Châu, Đà Nẵng",
+            "latitude": 16.0680,
+            "longitude": 108.2180,
+            "google_maps_url": "https://www.google.com/maps?q=16.068000,108.218000",
+            "distance_km": 1.2,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "08:30 - 22:00",
+            "gia_ve": "70.000đ - 150.000đ/phần",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        }
+    ],
+    "đà lạt": [
+        {
+            "id": "hub_dl_1",
+            "ten_dia_diem": "Quảng Trường Lâm Viên & Hồ Xuân Hương",
+            "mo_ta": "Trái tim của xứ sở sương mù với hai công trình biểu tượng độc đáo: khối hoa Dã Quỳ cao 18m và nụ hoa Atiso bằng kính màu khổng lồ cao 15m. Dạo quanh bờ Hồ Xuân Hương phẳng lặng ngắm hoàng hôn buông xuống lãng mạn.",
+            "loai_dia_diem": "Quảng trường / Check-in biểu tượng",
+            "khu_vuc": "Đà Lạt, Lâm Đồng",
+            "dia_chi": "Đường Trần Quốc Toản, Phường 10, TP. Đà Lạt",
+            "latitude": 11.9360,
+            "longitude": 108.4450,
+            "google_maps_url": "https://www.google.com/maps?q=11.936000,108.445000",
+            "distance_km": 0.5,
+            "similarity": 0.99,
+            "image_url": "https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "Cả ngày",
+            "gia_ve": "Miễn phí",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dl_2",
+            "ten_dia_diem": "Đồi Chè Cầu Đất & Săn Mây Panorama",
+            "mo_ta": "Thiên đường săn mây bồng bềnh buổi sớm mai đẹp nhất Việt Nam. Những đồi chè xanh mướt mát uốn lượn trải dài ngút ngàn, hàng quạt gió điện gió khổng lồ quay chậm rãi giữa thung lũng mây trắng như chốn bồng lai.",
+            "loai_dia_diem": "Săn mây / Đồi chè thiên nhiên",
+            "khu_vuc": "Xuân Trường, Đà Lạt",
+            "dia_chi": "Thôn Cầu Đất, Xã Xuân Trường, TP. Đà Lạt",
+            "latitude": 11.8580,
+            "longitude": 108.5620,
+            "google_maps_url": "https://www.google.com/maps?q=11.858000,108.562000",
+            "distance_km": 23.0,
+            "similarity": 0.99,
+            "image_url": "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "05:00 - 17:30 (Khuyên đi từ 05:30 để săn mây)",
+            "gia_ve": "Miễn phí tham quan đồi chè",
+            "danh_gia": 4.9,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dl_3",
+            "ten_dia_diem": "Ga Xe Lửa Đà Lạt & Thung Lũng Tình Yêu",
+            "mo_ta": "Nhà ga cổ kính nhất Đông Dương mang đậm phong cách kiến trúc Art Deco Pháp với hình ảnh 3 chóp mái mô phỏng đỉnh núi Langbiang hùng vĩ. Nơi lưu giữ đầu tàu hơi nước cổ và cung đường hoa cẩm tú cầu nở rực quanh năm.",
+            "loai_dia_diem": "Kiến trúc cổ / Check-in lãng mạn",
+            "khu_vuc": "Phường 10, Đà Lạt",
+            "dia_chi": "01 Quang Trung, Phường 10, TP. Đà Lạt",
+            "latitude": 11.9415,
+            "longitude": 108.4550,
+            "google_maps_url": "https://www.google.com/maps?q=11.941500,108.455000",
+            "distance_km": 1.5,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1507842229452-779836376822?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:30 - 17:00",
+            "gia_ve": "50.000đ/vé vào ga",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dl_4",
+            "ten_dia_diem": "Đỉnh Núi Langbiang",
+            "mo_ta": "'Nóc nhà Đà Lạt' cao hơn 2.167m gắn liền truyền thuyết tình yêu chàng K'lang và nàng H'biang. Du khách trải nghiệm xe Jeep địa hình lao vun vút qua đồi thông lên đỉnh Ra-đa ngắm trọn vẹn dòng Suối Vàng - Suối Bạc trong màn sương.",
+            "loai_dia_diem": "Núi cao / Khám phá dã ngoại",
+            "khu_vuc": "Lạc Dương, Lâm Đồng",
+            "dia_chi": "Thị trấn Lạc Dương, Huyện Lạc Dương, Lâm Đồng",
+            "latitude": 12.0460,
+            "longitude": 108.4350,
+            "google_maps_url": "https://www.google.com/maps?q=12.046000,108.435000",
+            "distance_km": 12.0,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "07:00 - 17:00",
+            "gia_ve": "50.000đ/vé cổng + 120.000đ/vé xe Jeep khứ hồi",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dl_5",
+            "ten_dia_diem": "Chợ Đêm Đà Lạt (Chợ Âm Phủ)",
+            "mo_ta": "Thánh địa ăn vặt đêm nhộn nhịp giữa lòng thành phố sương mù. Thưởng thức bánh tráng nướng trứng giòn rụm, dâu lắc muối ớt, xiên que nướng bốc khói và cốc sữa đậu nành nóng hổi xua tan cái lạnh cao nguyên.",
+            "loai_dia_diem": "Chợ đêm / Ẩm thực đường phố",
+            "khu_vuc": "Phường 1, Đà Lạt",
+            "dia_chi": "Đường Nguyễn Thị Minh Khai, Phường 1, TP. Đà Lạt",
+            "latitude": 11.9420,
+            "longitude": 108.4370,
+            "google_maps_url": "https://www.google.com/maps?q=11.942000,108.437000",
+            "distance_km": 0.8,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "17:00 - 23:30",
+            "gia_ve": "Miễn phí vào chợ",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        },
+        {
+            "id": "hub_dl_6",
+            "ten_dia_diem": "Lẩu Gà Lá É Tao Ngộ & Lẩu Bò Ba Toa",
+            "mo_ta": "Đặc sản trứ danh làm say lòng mọi thực khách khi đến Đà Lạt. Nồi lẩu gà lá é sôi sùng sục thơm the mát dịu từ lá é trắng, vị ngọt thanh của thịt gà đồi săn chắc chấm muối tiêu chanh ớt cay nồng tuyệt hảo trong tiết trời se lạnh.",
+            "loai_dia_diem": "Ẩm thực & Quán ăn gia truyền",
+            "khu_vuc": "Phường 3, Đà Lạt",
+            "dia_chi": "05 Đường 3/4, Phường 3, TP. Đà Lạt",
+            "latitude": 11.9330,
+            "longitude": 108.4490,
+            "google_maps_url": "https://www.google.com/maps?q=11.933000,108.449000",
+            "distance_km": 1.2,
+            "similarity": 0.98,
+            "image_url": "https://images.unsplash.com/photo-1544025162-d76694265947?w=800&auto=format&fit=crop",
+            "thoi_gian_hoat_dong": "10:00 - 22:00",
+            "gia_ve": "200.000đ - 350.000đ/nồi",
+            "danh_gia": 4.8,
+            "language": "vietnamese"
+        }
+    ]
+}
 
 
 def search_pois_from_postgresql(question: str, extracted_features: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
@@ -1403,6 +2161,29 @@ def search_pois_from_postgresql(question: str, extracted_features: Dict[str, Any
             or_clauses.append(f"(LOWER(category) LIKE :{param_key} OR LOWER(fclass) LIKE :{param_key} OR LOWER(name) LIKE :{param_key})")
             params[param_key] = f"%{ct}%"
         conditions.append(f"({' OR '.join(or_clauses)})")
+
+    # 2.1. ƯU TIÊN SỐ 1: Điểm đến biểu tượng & Ẩm thực đặc sản đa dạng do Tác tử tuyển chọn (Không phụ thuộc cứng ngắc vào OSM)
+    scan_hub_text = f"{target_region_name} {dest_text} {question}".lower()
+    matched_hub_key = None
+    for hk in sorted(AGENT_DYNAMIC_CURATED_HUBS.keys(), key=lambda k: len(k), reverse=True):
+        if hk in scan_hub_text:
+            matched_hub_key = hk
+            break
+
+    if matched_hub_key:
+        curated_candidates = list(AGENT_DYNAMIC_CURATED_HUBS[matched_hub_key])
+        if cat_targets:
+            filtered = []
+            rest = []
+            for cp in curated_candidates:
+                cp_str = f"{cp.get('ten_dia_diem','')} {cp.get('loai_dia_diem','')} {cp.get('mo_ta','')}".lower()
+                if any(ct in cp_str for ct in cat_targets):
+                    filtered.append(cp)
+                else:
+                    rest.append(cp)
+            curated_candidates = filtered + rest
+        if len(curated_candidates) >= limit:
+            return curated_candidates[:limit]
 
     where_clause = " AND ".join(conditions)
     fetch_limit = max(limit * 4, 24)

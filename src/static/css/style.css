@@ -3484,5 +3484,61 @@ body {
     transform: translateY(0);
 }
 
+/* Inline Chat Images (Magazine-style Destination Showcase) */
+.chat-inline-img-box {
+    margin: 14px 0 16px 0;
+    max-width: 580px;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.chat-inline-img-box:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.chat-inline-img {
+    width: 100%;
+    height: 250px;
+    object-fit: cover;
+    display: block;
+}
+
+.chat-inline-caption {
+    display: block;
+    padding: 7px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #94a3b8;
+    background: rgba(15, 23, 42, 0.9);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chat-inline-caption i {
+    color: #38bdf8;
+    margin-right: 5px;
+}
+
+[data-theme="light"] .chat-inline-img-box {
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .chat-inline-caption {
+    background: #f8fafc;
+    color: #475569;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .chat-inline-caption i {
+    color: #0284c7;
+}
+
+
 
 

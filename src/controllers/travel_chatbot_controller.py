@@ -90,6 +90,10 @@ metadata_model = travel_chatbot_ns.model('Metadata', {
     'latitude': fields.Float(description='Latitude'),
     'longitude': fields.Float(description='Longitude'),
     'google_maps_url': fields.String(description='Google Maps URL'),
+    'image_url': fields.String(description='Thumbnail image URL'),
+    'thoi_gian_hoat_dong': fields.String(description='Opening hours'),
+    'gia_ve': fields.String(description='Ticket price'),
+    'danh_gia': fields.Float(description='Rating out of 5'),
     'additional_info': fields.Raw(description='Additional metadata information')
 })
 
@@ -391,6 +395,7 @@ class GetMetadata(Resource):
                 {"limit": limit, "offset": offset}
             ).fetchall()
             
+            from src.services.travel_chatbot_service import _get_curated_image_and_meta
             metadata_list = []
             for r in rows:
                 osm_id, name, category, address, lat, lon = r[0], r[1], r[2], r[3], r[4], r[5]
@@ -398,16 +403,21 @@ class GetMetadata(Resource):
                 lon_f = float(lon) if lon is not None else None
                 gmaps_url = f"https://www.google.com/maps?q={lat_f:.6f},{lon_f:.6f}" if (lat_f and lon_f) else None
                 addr_str = address if (address and "chưa có địa chỉ" not in address.lower()) else (f"{name}, Việt Nam" if name else "Việt Nam")
+                img_url, hours, price, rating, desc = _get_curated_image_and_meta(name or '', category or '', '', 'Việt Nam')
                 metadata_list.append({
                     'id': str(osm_id),
                     'ten_dia_diem': name or '',
-                    'mo_ta': f"Phân loại: {category or 'Địa điểm'} - Địa chỉ: {addr_str}",
+                    'mo_ta': desc or f"Phân loại: {category or 'Địa điểm'} - Địa chỉ: {addr_str}",
                     'loai_dia_diem': category or 'Địa điểm',
                     'khu_vuc': 'Việt Nam',
                     'dia_chi': addr_str,
                     'latitude': lat_f,
                     'longitude': lon_f,
                     'google_maps_url': gmaps_url,
+                    'image_url': img_url,
+                    'thoi_gian_hoat_dong': hours,
+                    'gia_ve': price,
+                    'danh_gia': rating,
                     'additional_info': {'category': category, 'address': address, 'latitude': lat_f, 'longitude': lon_f}
                 })
             
